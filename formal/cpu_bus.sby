@@ -1,0 +1,15 @@
+[options]
+mode prove
+depth 24
+multiclock off
+
+[engines]
+smtbmc z3
+
+[script]
+read_verilog -formal -sv rv32i_core.sv cpu_bus_formal.sv
+prep -top cpu_bus_formal
+
+[files]
+rtl/rv32i_core.sv
+formal/cpu_bus_formal.sv

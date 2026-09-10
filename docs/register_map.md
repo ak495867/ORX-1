@@ -56,3 +56,19 @@ The supplied reference top level drives a deterministic zero-word boot image int
 | `0x14` | WO | Write bit 0 to clear all counters |
 
 The weighted activity score is an RTL-observable proxy for end-to-end energy accounting. It is not a measured electrical power value and must not be used as a silicon power claim.
+
+## CPU performance counters
+
+The cycle-accurate CPU counters are exposed through the energy-monitor window. They are 32-bit free-running counters and clear on reset. They count clock cycles, retired instructions, completed loads, completed stores, branch instructions, accepted data-bus requests, and cycles spent waiting for a response.
+
+| Offset | Access | Meaning |
+|---:|:---:|---|
+| `0x18` | RO | CPU cycle counter |
+| `0x1c` | RO | Retired instruction counter |
+| `0x20` | RO | Completed load counter |
+| `0x24` | RO | Completed store counter |
+| `0x28` | RO | Branch instruction counter |
+| `0x2c` | RO | Accepted CPU data-bus request counter |
+| `0x30` | RO | CPU response-wait cycle counter |
+
+The counters wrap modulo 2^32. Software should sample them before and after a benchmark and subtract modulo 2^32.

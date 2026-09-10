@@ -74,14 +74,18 @@ The repository assumes a Unix-like environment with Git, Icarus Verilog, Verilat
 | Command | Purpose |
 |---|---|
 | `make sim` | Compile and run the primary and secure-boot regressions |
+| `make bench` | Run the deterministic CPU benchmark and report cycle counters |
 | `make lint` | Run Verilator lint on the SoC top level |
 | `make synth` | Elaborate, optimize, check, and report the SoC with Yosys |
+| `make formal` | Run the SymbiYosys CPU/bus proof with Z3 |
 | `make all` | Run simulation, lint, and synthesis checks |
 | `make clean` | Remove generated build outputs |
 | `./scripts/run_sim.sh` | Run both simulation regressions directly |
 | `./scripts/check_rtl.sh` | Run Verilator and Yosys validation directly |
 
 Generated outputs are placed under `build/` and ignored by Git. The Makefile and scripts contain no tool-specific absolute paths, so the flow can be used locally or from continuous integration.
+
+The repository also includes a `.devcontainer/` definition for a repeatable Ubuntu-based RTL toolchain. The CPU and SoC use an explicit request/response data interface with `req_valid`, `req_ready`, `req_write`, `req_addr`, `req_wdata`, `req_wstrb`, `rsp_valid`, `rsp_rdata`, and `rsp_err`. The core has `FETCH`, `MEM_REQUEST`, `MEM_WAIT`, and `TRAP` states so a derivative fabric can insert response latency.
 
 ## Continuous integration
 

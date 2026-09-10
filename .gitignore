@@ -3,4 +3,6 @@ build/
 *.fst
 *.log
 .verilator/
+formal/cpu_bus/
+*.smt2
 .DS_Store

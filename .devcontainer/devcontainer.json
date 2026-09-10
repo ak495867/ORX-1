@@ -1,0 +1,10 @@
+{
+  "name": "ORX-1 RTL Toolchain",
+  "build": { "dockerfile": "Dockerfile" },
+  "workspaceFolder": "/workspaces/ORX-1",
+  "customizations": {
+    "vscode": {
+      "extensions": ["mshr-h.veriloghdl"]
+    }
+  }
+}
