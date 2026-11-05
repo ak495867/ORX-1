@@ -18,7 +18,7 @@ module sha256_engine (
   integer i;
 
   function automatic logic [31:0] rotr(input logic [31:0] val, input logic [4:0] amt);
-    rotr = (val >> amt) | (val << (5'd32 - amt));
+    rotr = (val >> amt) | (val << (6'd32 - {1'b0, amt}));
   endfunction
 
   function automatic logic [31:0] sigma0(input logic [31:0] x);
@@ -54,7 +54,7 @@ module sha256_engine (
       6'd48: get_k = 32'h19a4c116; 6'd49: get_k = 32'h1e376c08; 6'd50: get_k = 32'h2748774c; 6'd51: get_k = 32'h34b0bcb5;
       6'd52: get_k = 32'h391c0cb3; 6'd53: get_k = 32'h4ed8aa4a; 6'd54: get_k = 32'h5b9cca4f; 6'd55: get_k = 32'h682e6ff3;
       6'd56: get_k = 32'h748f82ee; 6'd57: get_k = 32'h78a5636f; 6'd58: get_k = 32'h84c87814; 6'd59: get_k = 32'h8cc70208;
-      6'd60: get_k = 32'h90befffa; 6'd61: get_k = 32'ha4506ceb; 6'd62: get_k = 32'nbef9a3f7; 6'd63: get_k = 32'hc67178f2;
+      6'd60: get_k = 32'h90befffa; 6'd61: get_k = 32'ha4506ceb; 6'd62: get_k = 32'hbef9a3f7; 6'd63: get_k = 32'hc67178f2;
       default: get_k = 32'd0;
     endcase
   endfunction
