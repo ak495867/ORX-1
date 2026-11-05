@@ -32,6 +32,7 @@ module orx1_soc (
   logic [31:0] energy_csr_rdata;
   logic [31:0] timer_csr_rdata;
   logic [31:0] dma_csr_rdata;
+  logic [31:0] cordic_csr_rdata;
   logic [31:0] cpu_cycles;
   logic [31:0] cpu_instructions;
   logic [31:0] cpu_loads;
@@ -62,6 +63,7 @@ module orx1_soc (
   logic [7:0] energy_csr_addr;
   logic [7:0] timer_csr_addr;
   logic [7:0] dma_csr_addr;
+  logic [7:0] cordic_csr_addr;
   logic [31:0] boot_word;
   logic [2:0] boot_addr;
   logic [31:0] boot_rom [0:255];
@@ -75,6 +77,7 @@ module orx1_soc (
   logic energy_select;
   logic timer_select;
   logic dma_select;
+  logic cordic_select;
   logic d_valid;
   logic d_ready;
   logic d_write;
@@ -82,6 +85,7 @@ module orx1_soc (
   logic uart_irq;
   logic timer_irq;
   logic dma_irq;
+  logic cordic_irq;
   logic core_irq;
   logic dma_req_valid;
   logic dma_req_write;
@@ -106,7 +110,8 @@ module orx1_soc (
   assign energy_select = req_valid && req_addr >= `ORX1_ENERGY_BASE && req_addr < `ORX1_ENERGY_BASE + `ORX1_REGION_SIZE;
   assign timer_select = req_valid && req_addr >= `ORX1_TIMER_BASE && req_addr < `ORX1_TIMER_BASE + `ORX1_REGION_SIZE;
   assign dma_select = req_valid && req_addr >= `ORX1_DMA_BASE && req_addr < `ORX1_DMA_BASE + `ORX1_REGION_SIZE;
-  assign rsp_err = req_valid && !(rom_select || sram_select || sensor_select || accel_select || boot_select || uart_select || energy_select || timer_select || dma_select);
+  assign cordic_select = req_valid && req_addr >= `ORX1_CORDIC_BASE && req_addr < `ORX1_CORDIC_BASE + `ORX1_REGION_SIZE;
+  assign rsp_err = req_valid && !(rom_select || sram_select || sensor_select || accel_select || boot_select || uart_select || energy_select || timer_select || dma_select || cordic_select);
   assign sensor_bus_valid = sensor_valid | (sensor_select && req_write && req_addr[7:0] == 8'h08);
   assign sensor_bus_data = sensor_valid ? sensor_data : req_wdata[15:0];
   assign accel_csr_valid = accel_select;
@@ -115,15 +120,17 @@ module orx1_soc (
   assign energy_csr_valid = energy_select;
   assign timer_csr_valid = timer_select;
   assign dma_csr_valid = dma_select;
+  assign cordic_csr_valid = cordic_select;
   assign accel_csr_addr = req_addr[7:0];
   assign boot_csr_addr = req_addr[7:0];
   assign uart_csr_addr = req_addr[7:0];
   assign energy_csr_addr = req_addr[7:0];
   assign timer_csr_addr = req_addr[7:0];
   assign dma_csr_addr = req_addr[7:0];
+  assign cordic_csr_addr = req_addr[7:0];
   assign boot_word = boot_rom[boot_addr];
   assign auto_infer_trigger = sensor_auto_infer & sensor_result_valid;
-  assign core_irq = sensor_irq | accelerator_irq | sensor_alert | uart_irq | dma_irq;
+  assign core_irq = sensor_irq | accelerator_irq | sensor_alert | uart_irq | dma_irq | cordic_irq;
 
   always_comb begin
     rsp_rdata = 32'd0;
@@ -136,6 +143,7 @@ module orx1_soc (
     else if (energy_select) rsp_rdata = energy_csr_rdata;
     else if (timer_select) rsp_rdata = timer_csr_rdata;
     else if (dma_select) rsp_rdata = dma_csr_rdata;
+    else if (cordic_select) rsp_rdata = cordic_csr_rdata;
   end
 
   always_ff @(posedge clk or posedge reset) begin
@@ -249,5 +257,16 @@ module orx1_soc (
     .cpu_cycles(cpu_cycles), .cpu_instructions(cpu_instructions), .cpu_loads(cpu_loads),
     .cpu_stores(cpu_stores), .cpu_branches(cpu_branches), .cpu_bus_requests(cpu_bus_requests),
     .cpu_wait_cycles(cpu_wait_cycles)
+  );
+
+  cordic_engine coproc_cordic (
+    .clk(clk),
+    .reset(reset),
+    .csr_valid(cordic_csr_valid),
+    .csr_write(req_write),
+    .csr_addr(cordic_csr_addr),
+    .csr_wdata(req_wdata),
+    .csr_rdata(cordic_csr_rdata),
+    .cordic_irq(cordic_irq)
   );
 endmodule

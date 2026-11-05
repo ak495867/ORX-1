@@ -24,6 +24,14 @@ module sensor_pipeline #(
   logic [1:0] target_count;
   integer index;
 
+  logic signed [WIDTH+1:0] pred_sample;
+  logic signed [WIDTH+1:0] pred_delta;
+  logic [WIDTH-1:0] abs_delta;
+
+  assign pred_sample = ($signed({2'd0, samples[3]}) <<< 1) - $signed({2'd0, samples[2]});
+  assign pred_delta = $signed({2'd0, sample_data}) - pred_sample;
+  assign abs_delta = (pred_delta < 0) ? (-pred_delta[WIDTH-1:0]) : pred_delta[WIDTH-1:0];
+
   assign next_sum = {2'd0, samples[1]} + {2'd0, samples[2]} + {2'd0, samples[3]} + {2'd0, sample_data};
   assign next_sum_2 = {1'b0, samples[3]} + {1'b0, sample_data};
 
@@ -37,9 +45,13 @@ module sensor_pipeline #(
         target_count = 2'd1;
         computed_result = next_sum_2[WIDTH:1];
       end
-      default: begin
+      2'b10: begin
         target_count = 2'd3;
         computed_result = next_sum[WIDTH+1:2];
+      end
+      default: begin
+        target_count = 2'd2;
+        computed_result = abs_delta;
       end
     endcase
   end

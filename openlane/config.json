@@ -13,6 +13,7 @@
     "dir::../rtl/dma_ctrl.sv",
     "dir::../rtl/energy_monitor.sv",
     "dir::../rtl/wb_interconnect.sv",
+    "dir::../rtl/cordic_engine.sv",
     "dir::../rtl/orx1_soc.sv"
   ],
   "CLOCK_PORT": "clk",

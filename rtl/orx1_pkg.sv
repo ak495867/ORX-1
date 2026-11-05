@@ -11,6 +11,7 @@
 `define ORX1_ENERGY_BASE 32'h4000_4000
 `define ORX1_TIMER_BASE 32'h4000_5000
 `define ORX1_DMA_BASE 32'h4000_6000
+`define ORX1_CORDIC_BASE 32'h4000_7000
 `define ORX1_REGION_SIZE 32'h0000_0100
 
 package orx1_pkg;
@@ -25,6 +26,7 @@ package orx1_pkg;
   localparam logic [31:0] ENERGY_BASE = `ORX1_ENERGY_BASE;
   localparam logic [31:0] TIMER_BASE = `ORX1_TIMER_BASE;
   localparam logic [31:0] DMA_BASE = `ORX1_DMA_BASE;
+  localparam logic [31:0] CORDIC_BASE = `ORX1_CORDIC_BASE;
   localparam logic [31:0] REGION_SIZE = `ORX1_REGION_SIZE;
 
   function automatic logic in_range(input logic [31:0] address, input logic [31:0] base, input logic [31:0] last);

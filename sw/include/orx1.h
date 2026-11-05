@@ -14,6 +14,7 @@
 #define ORX1_ENERGY_BASE   0x20000400
 #define ORX1_TIMER_BASE    0x20000500
 #define ORX1_DMA_BASE      0x20000600
+#define ORX1_CORDIC_BASE   0x20000700
 
 #define SENSOR_CTRL        REG32(ORX1_SENSOR_BASE + 0x00)
 #define SENSOR_CLEAR       REG32(ORX1_SENSOR_BASE + 0x04)
@@ -65,6 +66,31 @@
 #define ENERGY_MEM         REG32(ORX1_ENERGY_BASE + 0x0C)
 #define ENERGY_WEIGHTED    REG32(ORX1_ENERGY_BASE + 0x10)
 #define ENERGY_CLEAR       REG32(ORX1_ENERGY_BASE + 0x14)
+
+#define CORDIC_CTRL        REG32(ORX1_CORDIC_BASE + 0x00)
+#define CORDIC_X           REG32(ORX1_CORDIC_BASE + 0x04)
+#define CORDIC_Y           REG32(ORX1_CORDIC_BASE + 0x08)
+#define CORDIC_Z           REG32(ORX1_CORDIC_BASE + 0x0C)
+#define CORDIC_MAG         REG32(ORX1_CORDIC_BASE + 0x10)
+
+static inline int32_t cordic_vector_magnitude(int16_t x, int16_t y) {
+  CORDIC_X = (int32_t)x;
+  CORDIC_Y = (int32_t)y;
+  CORDIC_Z = 0;
+  CORDIC_CTRL = 0x04;
+  while (CORDIC_CTRL & 0x02);
+  return (int32_t)CORDIC_MAG;
+}
+
+static inline void cordic_rotate(int16_t x, int16_t y, int16_t angle, int16_t *out_x, int16_t *out_y) {
+  CORDIC_X = (int32_t)x;
+  CORDIC_Y = (int32_t)y;
+  CORDIC_Z = (int32_t)angle;
+  CORDIC_CTRL = 0x05;
+  while (CORDIC_CTRL & 0x02);
+  if (out_x) *out_x = (int16_t)CORDIC_X;
+  if (out_y) *out_y = (int16_t)CORDIC_Y;
+}
 
 static inline void uart_putc(char c) {
   while (UART_STATUS & 0x01);

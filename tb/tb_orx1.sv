@@ -131,6 +131,22 @@ module tb_orx1;
     if (accel_rdata != 32'd120) failures = failures + 1;
     accel_valid = 1'b0;
 
+    write_accel(8'h30, 32'h0504_0302);
+    write_accel(8'h34, 32'h0001_0a05);
+    write_accel(8'h08, 32'd0);
+    write_accel(8'h0c, 32'd0);
+    write_accel(8'h00, 32'h81);
+    @(posedge clk);
+    #1;
+    if (!accel_irq) failures = failures + 1;
+    @(negedge clk);
+    accel_addr = 8'h04;
+    accel_valid = 1'b1;
+    accel_write = 1'b0;
+    #1;
+    if (accel_rdata != 32'd35) failures = failures + 1;
+    accel_valid = 1'b0;
+
     if (failures == 0) $display("ORX1_TEST_PASS");
     else $display("ORX1_TEST_FAIL %0d", failures);
     $finish;

@@ -13,6 +13,7 @@ ORX-1 exposes peripherals through a single 32-bit memory-mapped data interface. 
 | Energy monitor | `0x40004000` | `0x100` | Activity counters and weighted energy proxy |
 | System Timer | `0x40005000` | `0x100` | RISC-V 64-bit real-time counter and comparator |
 | Micro-DMA | `0x40006000` | `0x100` | 2-channel autonomous DMA memory engine |
+| CORDIC Coprocessor | `0x40007000` | `0x100` | 16-stage vector rotation and magnitude engine |
 
 ## Sensor pipeline
 
@@ -22,7 +23,7 @@ ORX-1 exposes peripherals through a single 32-bit memory-mapped data interface. 
 | `0x04` | RO | Bit 0 reflects the result interrupt pulse |
 | `0x08` | WO or RO | Write injects a sample; read returns the latest average |
 | `0x0c` | RO | Bit 0 indicates a valid result pulse |
-| `0x10` | RW | Filter depth: `0` = 1 sample, `1` = 2 samples, `2` = 4 samples (default) |
+| `0x10` | RW | Filter depth: `0` = 1 sample, `1` = 2 samples, `2` = 4 samples (default), `3` = Predictive Adaptive Delta-Stream (PADS) mode |
 | `0x14` | RW | Lower threshold limit (16-bit) |
 | `0x18` | RW | Upper threshold limit (16-bit) |
 | `0x1c` | RO | Bit 0 reflects current out-of-bounds alert status |
@@ -33,7 +34,7 @@ The filter accepts incoming samples and computes an integer average according to
 
 | Offset | Access | Meaning |
 |---:|:---:|---|
-| `0x00` | RW | Bit 0: start computation; Bit 1: clear done; Bit 2: accumulate mode; Bit 3: ReLU mode; Bit 4: bias addition; Bit 5: 4x4 Matrix mode; Bit 6: swap shadow weights |
+| `0x00` | RW | Bit 0: start computation; Bit 1: clear done; Bit 2: accumulate mode; Bit 3: ReLU mode; Bit 4: bias addition; Bit 5: 4x4 Matrix mode; Bit 6: swap shadow weights; Bit 7: 2:4 Structured Sparsity mode |
 | `0x04` | RO | Signed 32-bit computation result row 0 |
 | `0x08` | RW | Signed 32-bit bias value |
 | `0x0c` | RW | 5-bit quantization right-shift amount (`result >>> shift`) |
@@ -91,6 +92,18 @@ When `mtime >= mtimecmp`, the hardware timer asserts `timer_irq`, directly trigg
 | `0x04` | RW | Channel 0 destination address |
 | `0x08` | RW | Channel 0 word count |
 | `0x0c` | RW | Channel 0 control: Bit 0: start; Bit 1: busy; Bit 2: done; Bit 3: auto-restart on sensor event |
+
+## CORDIC Coprocessor
+
+| Offset | Access | Meaning |
+|---:|:---:|---|
+| `0x00` | RW | Bit 0: mode (0 = vectoring, 1 = rotation); Bit 1: clear done; Bit 2: start computation; Bit 3: busy; Bit 4: done / IRQ |
+| `0x04` | RW | 32-bit signed X coordinate / vector component |
+| `0x08` | RW | 32-bit signed Y coordinate / vector component |
+| `0x0c` | RW | 32-bit signed Z angle register |
+| `0x10` | RO | 32-bit scaled magnitude output $\sqrt{X^2 + Y^2}$ |
+
+The 16-stage CORDIC engine performs polar-to-cartesian conversions and vector magnitude calculation using only shift and add operations without hardware multipliers.
 
 ## Energy monitor
 

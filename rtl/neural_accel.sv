@@ -20,6 +20,7 @@ module neural_accel (
   logic cfg_relu;
   logic cfg_bias;
   logic cfg_matrix;
+  logic cfg_sparse;
   logic busy;
   logic done;
   integer r, c;
@@ -34,18 +35,38 @@ module neural_accel (
     input logic [4:0] sh,
     input logic do_accum,
     input logic do_relu,
-    input logic do_bias
+    input logic do_bias,
+    input logic do_sparse
   );
     logic signed [31:0] m0, m1, m2, m3;
     logic signed [31:0] p_sum;
     logic signed [31:0] a_sum;
     logic signed [31:0] s_sum;
+    logic signed [7:0] sa0, sa1;
     begin
-      m0 = (a0 == 8'sd0) ? 32'sd0 : ($signed(a0) * $signed(w0));
-      m1 = (a1 == 8'sd0) ? 32'sd0 : ($signed(a1) * $signed(w1));
-      m2 = (a2 == 8'sd0) ? 32'sd0 : ($signed(a2) * $signed(w2));
-      m3 = (a3 == 8'sd0) ? 32'sd0 : ($signed(a3) * $signed(w3));
-      p_sum = m0 + m1 + m2 + m3;
+      if (do_sparse) begin
+        case (w2[1:0])
+          2'd0: sa0 = a0;
+          2'd1: sa0 = a1;
+          2'd2: sa0 = a2;
+          default: sa0 = a3;
+        endcase
+        case (w2[3:2])
+          2'd0: sa1 = a0;
+          2'd1: sa1 = a1;
+          2'd2: sa1 = a2;
+          default: sa1 = a3;
+        endcase
+        m0 = (sa0 == 8'sd0) ? 32'sd0 : ($signed(sa0) * $signed(w0));
+        m1 = (sa1 == 8'sd0) ? 32'sd0 : ($signed(sa1) * $signed(w1));
+        p_sum = m0 + m1;
+      end else begin
+        m0 = (a0 == 8'sd0) ? 32'sd0 : ($signed(a0) * $signed(w0));
+        m1 = (a1 == 8'sd0) ? 32'sd0 : ($signed(a1) * $signed(w1));
+        m2 = (a2 == 8'sd0) ? 32'sd0 : ($signed(a2) * $signed(w2));
+        m3 = (a3 == 8'sd0) ? 32'sd0 : ($signed(a3) * $signed(w3));
+        p_sum = m0 + m1 + m2 + m3;
+      end
       a_sum = (do_accum ? prev : 32'sd0) + p_sum + (do_bias ? b : 32'sd0);
       s_sum = a_sum >>> sh;
       if (do_relu && s_sum < 32'sd0) compute_mac_row = 32'sd0;
@@ -56,7 +77,7 @@ module neural_accel (
   always_comb begin
     csr_rdata = 32'd0;
     case (csr_addr)
-      8'h00: csr_rdata = {26'd0, cfg_matrix, cfg_bias, cfg_relu, cfg_accum, done, busy};
+      8'h00: csr_rdata = {25'd0, cfg_sparse, cfg_matrix, cfg_bias, cfg_relu, cfg_accum, done, busy};
       8'h04: csr_rdata = result[0];
       8'h08: csr_rdata = bias[0];
       8'h0c: csr_rdata = {27'd0, shift_amt};
@@ -96,6 +117,7 @@ module neural_accel (
       cfg_relu <= 1'b0;
       cfg_bias <= 1'b0;
       cfg_matrix <= 1'b0;
+      cfg_sparse <= 1'b0;
       busy <= 1'b0;
       done <= 1'b0;
       irq <= 1'b0;
@@ -109,6 +131,7 @@ module neural_accel (
             cfg_relu <= csr_wdata[3];
             cfg_bias <= csr_wdata[4];
             cfg_matrix <= csr_wdata[5];
+            cfg_sparse <= csr_wdata[7];
             if (csr_wdata[6]) begin
               for (r = 0; r < 4; r = r + 1) begin
                 for (c = 0; c < 4; c = c + 1) begin
@@ -122,26 +145,26 @@ module neural_accel (
                 activation[0], activation[1], activation[2], activation[3],
                 weight[0][0], weight[0][1], weight[0][2], weight[0][3],
                 result[0], bias[0], shift_amt,
-                csr_wdata[2], csr_wdata[3], csr_wdata[4]
+                csr_wdata[2], csr_wdata[3], csr_wdata[4], csr_wdata[7]
               );
               if (csr_wdata[5]) begin
                 result[1] <= compute_mac_row(
                   activation[0], activation[1], activation[2], activation[3],
                   weight[1][0], weight[1][1], weight[1][2], weight[1][3],
                   result[1], bias[1], shift_amt,
-                  csr_wdata[2], csr_wdata[3], csr_wdata[4]
+                  csr_wdata[2], csr_wdata[3], csr_wdata[4], csr_wdata[7]
                 );
                 result[2] <= compute_mac_row(
                   activation[0], activation[1], activation[2], activation[3],
                   weight[2][0], weight[2][1], weight[2][2], weight[2][3],
                   result[2], bias[2], shift_amt,
-                  csr_wdata[2], csr_wdata[3], csr_wdata[4]
+                  csr_wdata[2], csr_wdata[3], csr_wdata[4], csr_wdata[7]
                 );
                 result[3] <= compute_mac_row(
                   activation[0], activation[1], activation[2], activation[3],
                   weight[3][0], weight[3][1], weight[3][2], weight[3][3],
                   result[3], bias[3], shift_amt,
-                  csr_wdata[2], csr_wdata[3], csr_wdata[4]
+                  csr_wdata[2], csr_wdata[3], csr_wdata[4], csr_wdata[7]
                 );
               end
               busy <= 1'b1;
@@ -202,7 +225,7 @@ module neural_accel (
           auto_infer_sample[7:0], auto_infer_sample[15:8], activation[2], activation[3],
           weight[0][0], weight[0][1], weight[0][2], weight[0][3],
           result[0], bias[0], shift_amt,
-          cfg_accum, cfg_relu, cfg_bias
+          cfg_accum, cfg_relu, cfg_bias, cfg_sparse
         );
         busy <= 1'b1;
       end

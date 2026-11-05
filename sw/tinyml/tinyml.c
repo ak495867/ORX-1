@@ -61,6 +61,63 @@ void tinyml_dense_4x4(const int8_t *activations, const int8_t *weights_4x4, cons
   out_4[3] = (int32_t)ACCEL_RESULT_3;
 }
 
+void tinyml_sparse_2_4(const int8_t *activations, const int8_t *sparse_weights_2, const uint8_t *indices_2, const int32_t *biases_4, int32_t *out_4, uint8_t shift, uint8_t relu) {
+  uint32_t act_packed = ((uint32_t)(uint8_t)activations[0]) |
+                        (((uint32_t)(uint8_t)activations[1]) << 8) |
+                        (((uint32_t)(uint8_t)activations[2]) << 16) |
+                        (((uint32_t)(uint8_t)activations[3]) << 24);
+
+  ACCEL_ACT_PACKED = act_packed;
+
+  uint8_t idx_byte0 = (indices_2[0] & 0x03) | ((indices_2[1] & 0x03) << 2);
+  uint8_t idx_byte1 = (indices_2[2] & 0x03) | ((indices_2[3] & 0x03) << 2);
+  uint8_t idx_byte2 = (indices_2[4] & 0x03) | ((indices_2[5] & 0x03) << 2);
+  uint8_t idx_byte3 = (indices_2[6] & 0x03) | ((indices_2[7] & 0x03) << 2);
+
+  ACCEL_W_ROW0 = ((uint32_t)(uint8_t)sparse_weights_2[0]) |
+                 (((uint32_t)(uint8_t)sparse_weights_2[1]) << 8) |
+                 (((uint32_t)idx_byte0) << 16);
+
+  ACCEL_W_ROW1 = ((uint32_t)(uint8_t)sparse_weights_2[2]) |
+                 (((uint32_t)(uint8_t)sparse_weights_2[3]) << 8) |
+                 (((uint32_t)idx_byte1) << 16);
+
+  ACCEL_W_ROW2 = ((uint32_t)(uint8_t)sparse_weights_2[4]) |
+                 (((uint32_t)(uint8_t)sparse_weights_2[5]) << 8) |
+                 (((uint32_t)idx_byte2) << 16);
+
+  ACCEL_W_ROW3 = ((uint32_t)(uint8_t)sparse_weights_2[6]) |
+                 (((uint32_t)(uint8_t)sparse_weights_2[7]) << 8) |
+                 (((uint32_t)idx_byte3) << 16);
+
+  if (biases_4) {
+    ACCEL_BIAS_0 = (uint32_t)biases_4[0];
+    ACCEL_BIAS_1 = (uint32_t)biases_4[1];
+    ACCEL_BIAS_2 = (uint32_t)biases_4[2];
+    ACCEL_BIAS_3 = (uint32_t)biases_4[3];
+  } else {
+    ACCEL_BIAS_0 = 0;
+    ACCEL_BIAS_1 = 0;
+    ACCEL_BIAS_2 = 0;
+    ACCEL_BIAS_3 = 0;
+  }
+
+  ACCEL_SHIFT = (uint32_t)shift;
+
+  uint32_t ctrl = 0xa1;
+  if (relu) ctrl |= 0x08;
+  if (biases_4) ctrl |= 0x10;
+
+  ACCEL_CTRL = ctrl;
+
+  while (ACCEL_CTRL & 0x01);
+
+  out_4[0] = (int32_t)ACCEL_RESULT_0;
+  out_4[1] = (int32_t)ACCEL_RESULT_1;
+  out_4[2] = (int32_t)ACCEL_RESULT_2;
+  out_4[3] = (int32_t)ACCEL_RESULT_3;
+}
+
 void tinyml_dense(const int8_t *in, const int8_t *weights, const int32_t *biases, int8_t *out, int in_dim, int out_dim, uint8_t shift, uint8_t relu) {
   int8_t in_buf[4];
   int8_t w_buf[16];
