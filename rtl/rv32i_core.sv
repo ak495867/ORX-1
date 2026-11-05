@@ -83,13 +83,15 @@ module rv32i_core #(
   assign req_wdata = mem_wdata_q;
   assign req_wstrb = mem_wstrb_q;
 
-  function automatic logic [31:0] load_extend(input logic [31:0] value, input logic [2:0] load_funct3);
+  function automatic logic [31:0] load_extend(input logic [31:0] value, input logic [2:0] load_funct3, input logic [1:0] byte_offset);
+    logic [31:0] shifted;
+    shifted = value >> (8 * byte_offset);
     case (load_funct3)
-      3'b000: load_extend = {{24{value[7]}}, value[7:0]};
-      3'b001: load_extend = {{16{value[15]}}, value[15:0]};
-      3'b010: load_extend = value;
-      3'b100: load_extend = {24'd0, value[7:0]};
-      3'b101: load_extend = {16'd0, value[15:0]};
+      3'b000: load_extend = {{24{shifted[7]}}, shifted[7:0]};
+      3'b001: load_extend = {{16{shifted[15]}}, shifted[15:0]};
+      3'b010: load_extend = shifted;
+      3'b100: load_extend = {24'd0, shifted[7:0]};
+      3'b101: load_extend = {16'd0, shifted[15:0]};
       default: load_extend = 32'd0;
     endcase
   endfunction
@@ -131,6 +133,14 @@ module rv32i_core #(
               3'b000: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0001 << effective_addr[1:0]) : 4'b0000;
               3'b001: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0011 << effective_addr[1:0]) : 4'b0000;
               3'b010: mem_wstrb_q <= (opcode == OP_STORE) ? 4'b1111 : 4'b0000;
+              3'b100: begin
+                if (opcode == OP_LOAD) mem_wstrb_q <= 4'b0000;
+                else begin mem_wstrb_q <= 4'b0000; trap <= 1'b1; state <= TRAP; end
+              end
+              3'b101: begin
+                if (opcode == OP_LOAD) mem_wstrb_q <= 4'b0000;
+                else begin mem_wstrb_q <= 4'b0000; trap <= 1'b1; state <= TRAP; end
+              end
               default: begin mem_wstrb_q <= 4'b0000; trap <= 1'b1; state <= TRAP; end
             endcase
           end else begin
@@ -200,7 +210,7 @@ module rv32i_core #(
                 perf_instructions <= perf_instructions + 32'd1;
                 if (mem_is_load_q) perf_loads <= perf_loads + 32'd1;
                 else perf_stores <= perf_stores + 32'd1;
-                if (mem_is_load_q && mem_rd_q != 5'd0) regs[mem_rd_q] <= load_extend(rsp_rdata, mem_funct3_q);
+                if (mem_is_load_q && mem_rd_q != 5'd0) regs[mem_rd_q] <= load_extend(rsp_rdata, mem_funct3_q, mem_addr_q[1:0]);
                 pc <= pc + 32'd4;
                 state <= FETCH;
               end
@@ -215,7 +225,7 @@ module rv32i_core #(
               perf_instructions <= perf_instructions + 32'd1;
               if (mem_is_load_q) perf_loads <= perf_loads + 32'd1;
               else perf_stores <= perf_stores + 32'd1;
-              if (mem_is_load_q && mem_rd_q != 5'd0) regs[mem_rd_q] <= load_extend(rsp_rdata, mem_funct3_q);
+              if (mem_is_load_q && mem_rd_q != 5'd0) regs[mem_rd_q] <= load_extend(rsp_rdata, mem_funct3_q, mem_addr_q[1:0]);
             end
             if (rsp_err) state <= TRAP;
             else begin pc <= pc + 32'd4; state <= FETCH; end

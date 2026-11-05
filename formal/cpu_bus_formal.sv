@@ -24,7 +24,11 @@ module cpu_bus_formal;
 
   always #1 clk = ~clk;
   always_comb begin
-    imem_rdata = 32'h0000_0013;
+    case (imem_addr[3:2])
+      2'b00: imem_rdata = 32'h0050_2023;
+      2'b01: imem_rdata = 32'h0000_2083;
+      default: imem_rdata = 32'h0000_0013;
+    endcase
     rsp_valid = req_valid && req_ready;
     rsp_rdata = 32'd0;
     rsp_err = 1'b0;
@@ -58,9 +62,5 @@ module cpu_bus_formal;
       assert (perf_instructions >= $past(perf_instructions));
       assert (perf_bus_requests >= $past(perf_bus_requests));
     end
-  end
-
-  always @(posedge clk) begin
-    if (!reset) assume(req_ready);
   end
 endmodule

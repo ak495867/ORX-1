@@ -45,6 +45,8 @@ module orx1_soc (
   logic [7:0] boot_csr_addr;
   logic [7:0] energy_csr_addr;
   logic [31:0] boot_word;
+  logic [2:0] boot_addr;
+  logic [31:0] boot_rom [0:255];
   logic [9:0] sram_index;
   logic rom_select;
   logic sram_select;
@@ -62,7 +64,7 @@ module orx1_soc (
   assign d_ready = req_ready;
   assign d_write = req_write;
   assign d_addr = req_addr;
-  assign imem_rdata = 32'd0;
+  assign imem_rdata = (imem_addr >= `ORX1_SRAM_BASE && imem_addr <= `ORX1_SRAM_LAST) ? sram[imem_addr[11:2]] : ((imem_addr <= `ORX1_BOOT_LAST && boot_rom[imem_addr[9:2]] != 32'd0) ? boot_rom[imem_addr[9:2]] : 32'h0000_0013);
   assign req_ready = req_valid;
   assign rsp_valid = req_valid && req_ready;
   assign sram_index = req_addr[11:2];
@@ -82,11 +84,11 @@ module orx1_soc (
   assign accel_csr_addr = req_addr[7:0];
   assign boot_csr_addr = req_addr[7:0];
   assign energy_csr_addr = req_addr[7:0];
-  assign boot_word = 32'd0;
+  assign boot_word = boot_rom[boot_addr];
 
   always_comb begin
     rsp_rdata = 32'd0;
-    if (rom_select) rsp_rdata = 32'd0;
+    if (rom_select) rsp_rdata = boot_rom[req_addr[9:2]];
     else if (sram_select) rsp_rdata = sram[sram_index];
     else if (sensor_select) rsp_rdata = sensor_csr_rdata;
     else if (accel_select) rsp_rdata = accel_csr_rdata;
@@ -151,7 +153,7 @@ module orx1_soc (
   secure_boot boot_controller (
     .clk(clk), .reset(reset), .csr_valid(boot_csr_valid), .csr_write(req_write),
     .csr_addr(boot_csr_addr), .csr_wdata(req_wdata), .csr_rdata(boot_csr_rdata),
-    .boot_release(boot_release), .fail(boot_fail), .boot_word(boot_word)
+    .boot_release(boot_release), .fail(boot_fail), .boot_addr(boot_addr), .boot_word(boot_word)
   );
 
   energy_monitor activity_monitor (

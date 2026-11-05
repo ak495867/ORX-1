@@ -12,13 +12,11 @@ module sensor_pipeline #(
   output logic irq
 );
   logic [WIDTH-1:0] samples [0:3];
-  logic [WIDTH+1:0] sum;
   logic [WIDTH+1:0] next_sum;
   logic [1:0] count;
   integer index;
 
-  assign sum = {2'd0, samples[0]} + {2'd0, samples[1]} + {2'd0, samples[2]} + {2'd0, samples[3]};
-  assign next_sum = sum + {2'd0, sample_data};
+  assign next_sum = {2'd0, samples[1]} + {2'd0, samples[2]} + {2'd0, samples[3]} + {2'd0, sample_data};
 
   always_ff @(posedge clk or posedge reset) begin
     if (reset) begin

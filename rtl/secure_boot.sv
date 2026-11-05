@@ -10,6 +10,7 @@ module secure_boot #(
   output logic [31:0] csr_rdata,
   output logic boot_release,
   output logic fail,
+  output logic [2:0] boot_addr,
   input logic [31:0] boot_word
 );
   logic running;
@@ -20,6 +21,7 @@ module secure_boot #(
   logic [2:0] boot_index;
   localparam logic [2:0] LAST_INDEX = WORDS - 3'd1;
 
+  assign boot_addr = boot_index;
   assign next_digest = (digest ^ boot_word) * 32'h0100_0193;
   always_comb begin
     csr_rdata = 32'd0;
