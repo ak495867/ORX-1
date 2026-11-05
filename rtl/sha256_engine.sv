@@ -3,7 +3,7 @@ module sha256_engine (
   input logic reset,
   input logic init,
   input logic start,
-  input logic [31:0] block_word [0:15],
+  input logic [511:0] block_data,
   output logic done,
   output logic [255:0] digest
 );
@@ -98,7 +98,22 @@ module sha256_engine (
         round_cnt <= 6'd0;
         a <= h0; b <= h1; c <= h2; d <= h3;
         e <= h4; f <= h5; g <= h6; h <= h7;
-        for (i = 0; i < 16; i = i + 1) w[i] <= block_word[i];
+        w[0] <= block_data[31:0];
+        w[1] <= block_data[63:32];
+        w[2] <= block_data[95:64];
+        w[3] <= block_data[127:96];
+        w[4] <= block_data[159:128];
+        w[5] <= block_data[191:160];
+        w[6] <= block_data[223:192];
+        w[7] <= block_data[255:224];
+        w[8] <= block_data[287:256];
+        w[9] <= block_data[319:288];
+        w[10] <= block_data[351:320];
+        w[11] <= block_data[383:352];
+        w[12] <= block_data[415:384];
+        w[13] <= block_data[447:416];
+        w[14] <= block_data[479:448];
+        w[15] <= block_data[511:480];
       end else if (busy) begin
         a <= t1 + t2;
         b <= a;

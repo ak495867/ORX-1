@@ -28,14 +28,22 @@ module secure_boot #(
   logic [31:0] sha_block [0:15];
   logic [2:0] efuse_idx;
   logic [31:0] efuse_hash [0:7];
+  logic [511:0] sha_block_flat;
   integer i;
+
+  assign sha_block_flat = {
+    sha_block[15], sha_block[14], sha_block[13], sha_block[12],
+    sha_block[11], sha_block[10], sha_block[9],  sha_block[8],
+    sha_block[7],  sha_block[6],  sha_block[5],  sha_block[4],
+    sha_block[3],  sha_block[2],  sha_block[1],  sha_block[0]
+  };
 
   sha256_engine u_sha256 (
     .clk(clk),
     .reset(reset),
     .init(1'b0),
     .start(sha_start),
-    .block_word(sha_block),
+    .block_data(sha_block_flat),
     .done(sha_done),
     .digest(sha_digest)
   );
