@@ -1,0 +1,84 @@
+#ifndef ORX1_H
+#define ORX1_H
+
+#include <stdint.h>
+
+#define REG32(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
+
+#define ORX1_BOOT_BASE     0x00000000
+#define ORX1_SRAM_BASE     0x10000000
+#define ORX1_SENSOR_BASE   0x20000000
+#define ORX1_ACCEL_BASE    0x20000100
+#define ORX1_BOOTCTRL_BASE 0x20000200
+#define ORX1_UART_BASE     0x20000300
+#define ORX1_ENERGY_BASE   0x20000400
+#define ORX1_TIMER_BASE    0x20000500
+#define ORX1_DMA_BASE      0x20000600
+
+#define SENSOR_CTRL        REG32(ORX1_SENSOR_BASE + 0x00)
+#define SENSOR_CLEAR       REG32(ORX1_SENSOR_BASE + 0x04)
+#define SENSOR_RESULT      REG32(ORX1_SENSOR_BASE + 0x08)
+#define SENSOR_VALID       REG32(ORX1_SENSOR_BASE + 0x0C)
+#define SENSOR_DEPTH       REG32(ORX1_SENSOR_BASE + 0x10)
+#define SENSOR_THRESH_LOW  REG32(ORX1_SENSOR_BASE + 0x14)
+#define SENSOR_THRESH_HIGH REG32(ORX1_SENSOR_BASE + 0x18)
+#define SENSOR_ALERT       REG32(ORX1_SENSOR_BASE + 0x1C)
+
+#define ACCEL_CTRL         REG32(ORX1_ACCEL_BASE + 0x00)
+#define ACCEL_RESULT_0     REG32(ORX1_ACCEL_BASE + 0x04)
+#define ACCEL_RESULT_1     REG32(ORX1_ACCEL_BASE + 0x08)
+#define ACCEL_RESULT_2     REG32(ORX1_ACCEL_BASE + 0x0C)
+#define ACCEL_RESULT_3     REG32(ORX1_ACCEL_BASE + 0x10)
+#define ACCEL_BIAS_0       REG32(ORX1_ACCEL_BASE + 0x14)
+#define ACCEL_BIAS_1       REG32(ORX1_ACCEL_BASE + 0x18)
+#define ACCEL_BIAS_2       REG32(ORX1_ACCEL_BASE + 0x1C)
+#define ACCEL_BIAS_3       REG32(ORX1_ACCEL_BASE + 0x20)
+#define ACCEL_SHIFT        REG32(ORX1_ACCEL_BASE + 0x24)
+#define ACCEL_ACT_PACKED   REG32(ORX1_ACCEL_BASE + 0x28)
+#define ACCEL_W_ROW0       REG32(ORX1_ACCEL_BASE + 0x30)
+#define ACCEL_W_ROW1       REG32(ORX1_ACCEL_BASE + 0x34)
+#define ACCEL_W_ROW2       REG32(ORX1_ACCEL_BASE + 0x38)
+#define ACCEL_W_ROW3       REG32(ORX1_ACCEL_BASE + 0x3C)
+#define ACCEL_SW_ROW0      REG32(ORX1_ACCEL_BASE + 0x50)
+#define ACCEL_SW_ROW1      REG32(ORX1_ACCEL_BASE + 0x54)
+#define ACCEL_SW_ROW2      REG32(ORX1_ACCEL_BASE + 0x58)
+#define ACCEL_SW_ROW3      REG32(ORX1_ACCEL_BASE + 0x5C)
+
+#define UART_DATA          REG32(ORX1_UART_BASE + 0x00)
+#define UART_STATUS        REG32(ORX1_UART_BASE + 0x04)
+#define UART_BAUD          REG32(ORX1_UART_BASE + 0x08)
+#define UART_CLEAR         REG32(ORX1_UART_BASE + 0x0C)
+
+#define TIMER_MTIME_L      REG32(ORX1_TIMER_BASE + 0x00)
+#define TIMER_MTIME_H      REG32(ORX1_TIMER_BASE + 0x04)
+#define TIMER_MTIMECMP_L   REG32(ORX1_TIMER_BASE + 0x08)
+#define TIMER_MTIMECMP_H   REG32(ORX1_TIMER_BASE + 0x0C)
+
+#define DMA_SRC            REG32(ORX1_DMA_BASE + 0x00)
+#define DMA_DST            REG32(ORX1_DMA_BASE + 0x04)
+#define DMA_LEN            REG32(ORX1_DMA_BASE + 0x08)
+#define DMA_CTRL           REG32(ORX1_DMA_BASE + 0x0C)
+
+#define ENERGY_CYCLES      REG32(ORX1_ENERGY_BASE + 0x00)
+#define ENERGY_SENSOR      REG32(ORX1_ENERGY_BASE + 0x04)
+#define ENERGY_ACCEL       REG32(ORX1_ENERGY_BASE + 0x08)
+#define ENERGY_MEM         REG32(ORX1_ENERGY_BASE + 0x0C)
+#define ENERGY_WEIGHTED    REG32(ORX1_ENERGY_BASE + 0x10)
+#define ENERGY_CLEAR       REG32(ORX1_ENERGY_BASE + 0x14)
+
+static inline void uart_putc(char c) {
+  while (UART_STATUS & 0x01);
+  UART_DATA = (uint32_t)c;
+}
+
+static inline void uart_puts(const char *s) {
+  while (*s) {
+    uart_putc(*s++);
+  }
+}
+
+static inline uint32_t timer_get_cycles(void) {
+  return TIMER_MTIME_L;
+}
+
+#endif

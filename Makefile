@@ -1,15 +1,16 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 BUILD := build
-RTL := rtl/orx1_pkg.sv rtl/rv32i_core.sv rtl/sensor_pipeline.sv rtl/neural_accel.sv rtl/sha256_engine.sv rtl/secure_boot.sv rtl/uart_core.sv rtl/timer_mtime.sv rtl/sram_sp.sv rtl/dma_ctrl.sv rtl/energy_monitor.sv rtl/orx1_soc.sv
+RTL := rtl/orx1_pkg.sv rtl/rv32i_core.sv rtl/sensor_pipeline.sv rtl/neural_accel.sv rtl/sha256_engine.sv rtl/secure_boot.sv rtl/uart_core.sv rtl/timer_mtime.sv rtl/sram_sp.sv rtl/dma_ctrl.sv rtl/energy_monitor.sv rtl/wb_interconnect.sv rtl/orx1_soc.sv
 TB_LEAF := tb/tb_orx1.sv
 TB_BOOT := tb/tb_secure_boot.sv
 TB_SOC := tb/tb_soc.sv
 TB_BENCH := tb/tb_cpu_benchmark.sv
+TB_COMP := tb/tb_riscv_compliance.sv
 
-.PHONY: all check sim bench lint synth formal clean
+.PHONY: all check sim bench compliance lint synth formal clean
 
-all: check sim bench lint synth formal
+all: check sim bench compliance lint synth formal
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -29,6 +30,11 @@ bench: $(BUILD)
 	iverilog -g2012 -Wall -s tb_cpu_benchmark -o $(BUILD)/tb_cpu_benchmark $(RTL) $(TB_BENCH) 2>&1 | tee $(BUILD)/sim_compile_benchmark.log
 	vvp $(BUILD)/tb_cpu_benchmark | tee $(BUILD)/benchmark.log
 	grep -q BENCHMARK_TEST_PASS $(BUILD)/benchmark.log
+
+compliance: $(BUILD)
+	iverilog -g2012 -Wall -s tb_riscv_compliance -o $(BUILD)/tb_riscv_compliance $(RTL) $(TB_COMP) 2>&1 | tee $(BUILD)/sim_compile_compliance.log
+	vvp $(BUILD)/tb_riscv_compliance | tee $(BUILD)/compliance.log
+	grep -q RISCV_COMPLIANCE $(BUILD)/compliance.log
 
 lint: $(BUILD)
 	verilator --lint-only -Wall --Wno-fatal --top-module orx1_soc $(RTL) 2>&1 | tee $(BUILD)/verilator.log

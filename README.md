@@ -77,6 +77,7 @@ The repository assumes a Unix-like environment with Git, Icarus Verilog, Verilat
 |---|---|
 | `make sim` | Compile and run the primary and secure-boot regressions |
 | `make bench` | Run the deterministic CPU benchmark and report cycle counters |
+| `make compliance` | Run the RISC-V architectural compliance test harness |
 | `make lint` | Run Verilator lint on the SoC top level |
 | `make synth` | Elaborate, optimize, check, and report the SoC with Yosys |
 | `make formal` | Run the SymbiYosys CPU/bus proof with Z3 |
@@ -84,6 +85,27 @@ The repository assumes a Unix-like environment with Git, Icarus Verilog, Verilat
 | `make clean` | Remove generated build outputs |
 | `./scripts/run_sim.sh` | Run both simulation regressions directly |
 | `./scripts/check_rtl.sh` | Run Verilator and Yosys validation directly |
+| `./scripts/run_openlane.sh` | Execute SkyWater 130nm ASIC physical layout |
+
+## Open-Source Silicon Ecosystem & Tapeout Readiness
+
+### 1. Wishbone B4 Standard Interconnect & Caravel ASIC Harness
+* [`rtl/wb_interconnect.sv`](rtl/wb_interconnect.sv): 2-Master (CPU + DMA/Host), 9-Slave pipelined Wishbone B4 crossbar.
+* [`rtl/caravel_user_project_wrapper.sv`](rtl/caravel_user_project_wrapper.sv): Efabless Caravel padframe wrapper mapping ORX-1 to SkyWater 130nm (`sky130_fd_sc_hd`) user project area with logic analyzer probes and GPIO pad assignments.
+
+### 2. RISC-V Architectural Compliance
+* [`tb/tb_riscv_compliance.sv`](tb/tb_riscv_compliance.sv): Compliance test harness supporting ELF/hex image loading, `tohost` completion handshakes, and test signature dumping.
+* [`sw/compliance/model_test.h`](sw/compliance/model_test.h): Official `riscv-arch-test` macro framework.
+
+### 3. Physical ASIC Flow (OpenLane 2 / SkyWater 130nm)
+* [`openlane/config.json`](openlane/config.json): OpenLane flow configuration targeting 50 MHz clock timing closure.
+* [`openlane/pin_order.cfg`](openlane/pin_order.cfg): Die edge pin layout for Caravel pad compatibility.
+* [`openlane/constraints.sdc`](openlane/constraints.sdc): Synopsys Design Constraints for clock uncertainty, transitions, and I/O delays.
+
+### 4. Bare-Metal C/C++ SDK & TinyML Runtime
+* [`sw/include/orx1.h`](sw/include/orx1.h): Register maps, peripheral bitfields, and hardware abstraction layer (HAL).
+* [`sw/tinyml/tinyml.h`](sw/tinyml/tinyml.h) & [`sw/tinyml/tinyml.c`](sw/tinyml/tinyml.c): Quantized INT8 inference runtime offloading dense/conv layers to the hardware systolic accelerator with hardware bias, shift, and fused ReLU.
+* [`sw/examples/tinyml_anomaly_detector.c`](sw/examples/tinyml_anomaly_detector.c): Streaming sensor anomaly detection pipeline with real-time energy telemetry.
 
 Generated outputs are placed under `build/` and ignored by Git. The Makefile and scripts contain no tool-specific absolute paths, so the flow can be used locally or from continuous integration.
 
