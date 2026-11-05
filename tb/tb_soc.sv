@@ -20,7 +20,7 @@ module tb_soc;
     .clk(clk), .reset(reset), .sensor_valid(sensor_valid), .sensor_data(sensor_data),
     .sensor_result_valid(sensor_result_valid), .sensor_result(sensor_result),
     .accelerator_irq(accelerator_irq), .boot_release(boot_release), .boot_fail(boot_fail),
-    .core_trap(core_trap), .sensor_alert(sensor_alert), .uart_tx(uart_tx)
+    .core_trap(core_trap), .sensor_alert(sensor_alert), .uart_rx(1'b1), .uart_tx(uart_tx)
   );
 
   task automatic sample(input logic [15:0] value);

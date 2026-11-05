@@ -54,8 +54,10 @@ The secure-boot controller processes a fixed number of boot words with a determi
 | Sensor pipeline | `0x40000000` | `0x100` | Sensor configuration and results |
 | Neural accelerator | `0x40001000` | `0x100` | INT8 operand and control registers |
 | Secure boot | `0x40002000` | `0x100` | Verification control and status |
-| UART transmitter | `0x40003000` | `0x100` | Hardware 8-N-1 serial TX transmitter |
+| UART core | `0x40003000` | `0x100` | Full-duplex 8-N-1 serial transceiver |
 | Energy monitor | `0x40004000` | `0x100` | Activity and energy-proxy counters |
+| System Timer | `0x40005000` | `0x100` | RISC-V 64-bit real-time counter (mtime/mtimecmp) |
+| Micro-DMA | `0x40006000` | `0x100` | 2-channel autonomous DMA memory engine |
 
 The complete register-level description is available in [`docs/register_map.md`](docs/register_map.md).
 

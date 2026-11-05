@@ -7,10 +7,12 @@ ORX-1 exposes peripherals through a single 32-bit memory-mapped data interface. 
 | Boot ROM window | `0x00000000` | `0x400` | Instruction and read-only boot region in the reference top level |
 | SRAM | `0x00010000` | `0x1000` | Small on-chip data memory |
 | Sensor pipeline | `0x40000000` | `0x100` | Sensor enable, clear, decimation, thresholding, and alert status |
-| Neural accelerator | `0x40001000` | `0x100` | INT8 operands, bias, ReLU, packed registers, and control |
-| Secure boot | `0x40002000` | `0x100` | Digest expectation, start control, and boot status |
-| UART transmitter | `0x40003000` | `0x100` | Hardware 8-N-1 UART TX transmitter |
+| Neural accelerator | `0x40001000` | `0x100` | 2D Matrix Systolic Array, INT8 operands, bias, ReLU, packed registers, shadow weights |
+| Secure boot | `0x40002000` | `0x100` | SHA-256 / FNV-1a verification, eFuse storage, and boot status |
+| UART core | `0x40003000` | `0x100` | Full-duplex 8-N-1 UART TX and RX transceiver |
 | Energy monitor | `0x40004000` | `0x100` | Activity counters and weighted energy proxy |
+| System Timer | `0x40005000` | `0x100` | RISC-V 64-bit real-time counter and comparator |
+| Micro-DMA | `0x40006000` | `0x100` | 2-channel autonomous DMA memory engine |
 
 ## Sensor pipeline
 
@@ -31,36 +33,64 @@ The filter accepts incoming samples and computes an integer average according to
 
 | Offset | Access | Meaning |
 |---:|:---:|---|
-| `0x00` | RW | Bit 0: start computation; Bit 1: clear done; Bit 2: accumulate mode; Bit 3: ReLU mode; Bit 4: bias addition |
-| `0x04` | RO | Signed 32-bit computation result |
+| `0x00` | RW | Bit 0: start computation; Bit 1: clear done; Bit 2: accumulate mode; Bit 3: ReLU mode; Bit 4: bias addition; Bit 5: 4x4 Matrix mode; Bit 6: swap shadow weights |
+| `0x04` | RO | Signed 32-bit computation result row 0 |
 | `0x08` | RW | Signed 32-bit bias value |
 | `0x0c` | RW | 5-bit quantization right-shift amount (`result >>> shift`) |
 | `0x10` to `0x1c` | RW | Four individual signed INT8 activation registers |
-| `0x20` to `0x2c` | RW | Four individual signed INT8 weight registers |
+| `0x20` to `0x2c` | RW | Four individual signed INT8 weight registers (row 0) |
 | `0x30` | RW | Packed 4x INT8 activations `{act[3], act[2], act[1], act[0]}` |
-| `0x34` | RW | Packed 4x INT8 weights `{wt[3], wt[2], wt[1], wt[0]}` |
+| `0x34` | RW | Packed 4x INT8 weights row 0 `{w03, w02, w01, w00}` |
+| `0x38` | RW | Packed 4x INT8 weights row 1 `{w13, w12, w11, w10}` |
+| `0x3c` | RW | Packed 4x INT8 weights row 2 `{w23, w22, w21, w20}` |
+| `0x40` | RW | Packed 4x INT8 weights row 3 `{w33, w32, w31, w30}` |
+| `0x44` | RO | Signed 32-bit computation result row 1 |
+| `0x48` | RO | Signed 32-bit computation result row 2 |
+| `0x4c` | RO | Signed 32-bit computation result row 3 |
+| `0x50` | RW | Packed shadow weights row 0 (ping-pong double buffer) |
 
-The accelerator executes a dot product over four INT8 activation/weight pairs. With packed registers, an entire 4-element vector is loaded in a single bus transaction. When enabled, bias addition, accumulation, quantization shift, and ReLU clipping are evaluated in a single step.
+In Matrix Mode (`Bit 5`), all 16 weights are multiplied with the 4-element activation vector in parallel, evaluating a $4 \times 4$ matrix-vector multiplication in a single step (16 MACs). Zero-skipping dynamically gates multipliers when activations are zero. Shadow weight registers allow ping-pong loading without stalling computation.
 
 ## Secure boot
 
 | Offset | Access | Meaning |
 |---:|:---:|---|
-| `0x00` | RW or RO | Bit 0 starts verification; bit 1 clears complete; bit 2 indicates complete; bit 3 indicates boot release; bit 4 indicates failure |
-| `0x04` | RO | Current rolling digest |
-| `0x08` | RW | Expected digest |
+| `0x00` | RW or RO | Bit 0: start verification; Bit 1: clear complete; Bit 2: complete; Bit 3: boot release; Bit 4: failure; Bit 5: enable SHA-256 mode |
+| `0x04` | RO | Current rolling digest (FNV-1a or lower word of SHA-256) |
+| `0x08` | RW | Expected digest lower word |
+| `0x0c` | RW | eFuse word index (0..7) |
+| `0x10` | RW | eFuse 32-bit data word at selected index |
 
-The controller streams words from `boot_rom` and calculates an FNV-1a rolling digest. A match releases the boot signal; a mismatch signals failure.
+In SHA-256 mode, the integrated hardware SHA-256 engine hashes the boot image and verifies it against the 256-bit eFuse hash register before asserting boot release.
 
-## UART transmitter
+## UART core (Full-Duplex)
 
 | Offset | Access | Meaning |
 |---:|:---:|---|
-| `0x00` | RW | TX payload byte (write initiates 8-N-1 serial frame transmission) |
-| `0x04` | RO | Bit 0 indicates transmitter busy; Bit 1 indicates last transmission done |
-| `0x08` | RW | Baud rate clock divider (cycles per bit period, default 16) |
+| `0x00` | RW | Data register: write transmits TX byte; read retrieves RX byte |
+| `0x04` | RO | Status: Bit 0: TX busy; Bit 1: TX done; Bit 2: RX valid; Bit 3: RX overrun |
+| `0x08` | RW | Baud rate clock divider |
+| `0x0c` | WO | Write Bit 0 to clear RX valid; Bit 1 to clear RX overrun |
 
-The transmitter drives the top-level `uart_tx` serial pin at the configured baud rate.
+## System Timer (`mtime`)
+
+| Offset | Access | Meaning |
+|---:|:---:|---|
+| `0x00` | RW | `mtime` lower 32 bits |
+| `0x04` | RW | `mtime` upper 32 bits |
+| `0x08` | RW | `mtimecmp` lower 32 bits |
+| `0x0c` | RW | `mtimecmp` upper 32 bits |
+
+When `mtime >= mtimecmp`, the hardware timer asserts `timer_irq`, directly triggering standard RISC-V timer interrupt handling.
+
+## Micro-DMA controller
+
+| Offset | Access | Meaning |
+|---:|:---:|---|
+| `0x00` | RW | Channel 0 source address |
+| `0x04` | RW | Channel 0 destination address |
+| `0x08` | RW | Channel 0 word count |
+| `0x0c` | RW | Channel 0 control: Bit 0: start; Bit 1: busy; Bit 2: done; Bit 3: auto-restart on sensor event |
 
 ## Energy monitor
 
@@ -73,20 +103,10 @@ The transmitter drives the top-level `uart_tx` serial pin at the configured baud
 | `0x10` | RO | Weighted activity score |
 | `0x14` | WO | Write bit 0 to clear all counters |
 
-The weighted activity score is an RTL-observable proxy for end-to-end energy accounting.
+## CPU architecture & instruction set
 
-## CPU performance counters
-
-The cycle-accurate CPU counters are exposed through the energy-monitor window. They count clock cycles, retired instructions, completed loads, completed stores, branch instructions, accepted data-bus requests, and cycles spent waiting for a response.
-
-| Offset | Access | Meaning |
-|---:|:---:|---|
-| `0x18` | RO | CPU cycle counter |
-| `0x1c` | RO | Retired instruction counter |
-| `0x20` | RO | Completed load counter |
-| `0x24` | RO | Completed store counter |
-| `0x28` | RO | Branch instruction counter |
-| `0x2c` | RO | Accepted CPU data-bus request counter |
-| `0x30` | RO | CPU response-wait cycle counter |
-
-The core additionally implements the standard RISC-V `WFI` instruction (`32'h10500073`), halting the core pipeline in a low-power wait state until an interrupt occurs.
+The core implements the **RV32I** integer base ISA along with:
+* **RV32M Standard Extension:** Hardware `MUL`, `MULH`, `MULHSU`, `MULHU`, `DIV`, `DIVU`, `REM`, `REMU`.
+* **Machine-Mode CSRs:** `mstatus`, `mie`, `mtvec`, `mepc`, `mcause`, `mip`, `mcycle`, `minstret`.
+* **Privileged Instructions:** `WFI` (Wait-For-Interrupt) and `MRET` (Machine Exception Return).
+* **Interrupt Controller:** Direct vectoring to `mtvec` for timer interrupts and external interrupts.

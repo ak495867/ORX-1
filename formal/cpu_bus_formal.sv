@@ -42,7 +42,7 @@ module cpu_bus_formal;
     .perf_cycles(perf_cycles), .perf_instructions(perf_instructions),
     .perf_loads(perf_loads), .perf_stores(perf_stores), .perf_branches(perf_branches),
     .perf_bus_requests(perf_bus_requests), .perf_wait_cycles(perf_wait_cycles),
-    .irq_external(1'b0)
+    .irq_external(1'b0), .irq_timer(1'b0)
   );
 
   initial begin

@@ -10,6 +10,7 @@ module orx1_soc (
   output logic boot_fail,
   output logic core_trap,
   output logic sensor_alert,
+  input logic uart_rx,
   output logic uart_tx
 );
   logic [31:0] imem_addr;
@@ -29,6 +30,8 @@ module orx1_soc (
   logic [31:0] boot_csr_rdata;
   logic [31:0] uart_csr_rdata;
   logic [31:0] energy_csr_rdata;
+  logic [31:0] timer_csr_rdata;
+  logic [31:0] dma_csr_rdata;
   logic [31:0] cpu_cycles;
   logic [31:0] cpu_instructions;
   logic [31:0] cpu_loads;
@@ -51,10 +54,14 @@ module orx1_soc (
   logic boot_csr_valid;
   logic uart_csr_valid;
   logic energy_csr_valid;
+  logic timer_csr_valid;
+  logic dma_csr_valid;
   logic [7:0] accel_csr_addr;
   logic [7:0] boot_csr_addr;
   logic [7:0] uart_csr_addr;
   logic [7:0] energy_csr_addr;
+  logic [7:0] timer_csr_addr;
+  logic [7:0] dma_csr_addr;
   logic [31:0] boot_word;
   logic [2:0] boot_addr;
   logic [31:0] boot_rom [0:255];
@@ -66,11 +73,21 @@ module orx1_soc (
   logic boot_select;
   logic uart_select;
   logic energy_select;
+  logic timer_select;
+  logic dma_select;
   logic d_valid;
   logic d_ready;
   logic d_write;
   logic [31:0] d_addr;
+  logic uart_irq;
+  logic timer_irq;
+  logic dma_irq;
   logic core_irq;
+  logic dma_req_valid;
+  logic dma_req_write;
+  logic [31:0] dma_req_addr;
+  logic [31:0] dma_req_wdata;
+  logic [3:0] dma_req_wstrb;
 
   assign d_valid = req_valid;
   assign d_ready = req_ready;
@@ -87,20 +104,26 @@ module orx1_soc (
   assign boot_select = req_valid && req_addr >= `ORX1_BOOTCTRL_BASE && req_addr < `ORX1_BOOTCTRL_BASE + `ORX1_REGION_SIZE;
   assign uart_select = req_valid && req_addr >= `ORX1_UART_BASE && req_addr < `ORX1_UART_BASE + `ORX1_REGION_SIZE;
   assign energy_select = req_valid && req_addr >= `ORX1_ENERGY_BASE && req_addr < `ORX1_ENERGY_BASE + `ORX1_REGION_SIZE;
-  assign rsp_err = req_valid && !(rom_select || sram_select || sensor_select || accel_select || boot_select || uart_select || energy_select);
+  assign timer_select = req_valid && req_addr >= `ORX1_TIMER_BASE && req_addr < `ORX1_TIMER_BASE + `ORX1_REGION_SIZE;
+  assign dma_select = req_valid && req_addr >= `ORX1_DMA_BASE && req_addr < `ORX1_DMA_BASE + `ORX1_REGION_SIZE;
+  assign rsp_err = req_valid && !(rom_select || sram_select || sensor_select || accel_select || boot_select || uart_select || energy_select || timer_select || dma_select);
   assign sensor_bus_valid = sensor_valid | (sensor_select && req_write && req_addr[7:0] == 8'h08);
   assign sensor_bus_data = sensor_valid ? sensor_data : req_wdata[15:0];
   assign accel_csr_valid = accel_select;
   assign boot_csr_valid = boot_select;
   assign uart_csr_valid = uart_select;
   assign energy_csr_valid = energy_select;
+  assign timer_csr_valid = timer_select;
+  assign dma_csr_valid = dma_select;
   assign accel_csr_addr = req_addr[7:0];
   assign boot_csr_addr = req_addr[7:0];
   assign uart_csr_addr = req_addr[7:0];
   assign energy_csr_addr = req_addr[7:0];
+  assign timer_csr_addr = req_addr[7:0];
+  assign dma_csr_addr = req_addr[7:0];
   assign boot_word = boot_rom[boot_addr];
   assign auto_infer_trigger = sensor_auto_infer & sensor_result_valid;
-  assign core_irq = sensor_irq | accelerator_irq | sensor_alert;
+  assign core_irq = sensor_irq | accelerator_irq | sensor_alert | uart_irq | dma_irq;
 
   always_comb begin
     rsp_rdata = 32'd0;
@@ -111,6 +134,8 @@ module orx1_soc (
     else if (boot_select) rsp_rdata = boot_csr_rdata;
     else if (uart_select) rsp_rdata = uart_csr_rdata;
     else if (energy_select) rsp_rdata = energy_csr_rdata;
+    else if (timer_select) rsp_rdata = timer_csr_rdata;
+    else if (dma_select) rsp_rdata = dma_csr_rdata;
   end
 
   always_ff @(posedge clk or posedge reset) begin
@@ -169,7 +194,7 @@ module orx1_soc (
     .rsp_valid(rsp_valid), .rsp_rdata(rsp_rdata), .rsp_err(rsp_err), .trap(core_trap),
     .perf_cycles(cpu_cycles), .perf_instructions(cpu_instructions), .perf_loads(cpu_loads),
     .perf_stores(cpu_stores), .perf_branches(cpu_branches), .perf_bus_requests(cpu_bus_requests),
-    .perf_wait_cycles(cpu_wait_cycles), .irq_external(core_irq)
+    .perf_wait_cycles(cpu_wait_cycles), .irq_external(core_irq), .irq_timer(timer_irq)
   );
 
   sensor_pipeline sensor (
@@ -195,10 +220,26 @@ module orx1_soc (
     .boot_release(boot_release), .fail(boot_fail), .boot_addr(boot_addr), .boot_word(boot_word)
   );
 
-  uart_tx serial_tx (
+  uart_core serial_comm (
     .clk(clk), .reset(reset), .csr_valid(uart_csr_valid), .csr_write(req_write),
     .csr_addr(uart_csr_addr), .csr_wdata(req_wdata), .csr_rdata(uart_csr_rdata),
-    .tx(uart_tx)
+    .rx(uart_rx), .tx(uart_tx), .uart_irq(uart_irq)
+  );
+
+  timer_mtime sys_timer (
+    .clk(clk), .reset(reset), .csr_valid(timer_csr_valid), .csr_write(req_write),
+    .csr_addr(timer_csr_addr), .csr_wdata(req_wdata), .csr_rdata(timer_csr_rdata),
+    .timer_irq(timer_irq)
+  );
+
+  dma_ctrl sys_dma (
+    .clk(clk), .reset(reset), .csr_valid(dma_csr_valid), .csr_write(req_write),
+    .csr_addr(dma_csr_addr), .csr_wdata(req_wdata), .csr_rdata(dma_csr_rdata),
+    .dma_req_valid(dma_req_valid), .dma_req_ready(1'b1),
+    .dma_req_write(dma_req_write), .dma_req_addr(dma_req_addr),
+    .dma_req_wdata(dma_req_wdata), .dma_req_wstrb(dma_req_wstrb),
+    .dma_rsp_valid(dma_req_valid), .dma_rsp_rdata(32'd0),
+    .sensor_event(sensor_result_valid), .dma_irq(dma_irq)
   );
 
   energy_monitor activity_monitor (

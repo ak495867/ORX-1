@@ -22,7 +22,8 @@ module rv32i_core #(
   output logic [31:0] perf_branches,
   output logic [31:0] perf_bus_requests,
   output logic [31:0] perf_wait_cycles,
-  input logic irq_external
+  input logic irq_external,
+  input logic irq_timer
 );
   localparam logic [6:0] OP_LUI = 7'b0110111;
   localparam logic [6:0] OP_AUIPC = 7'b0010111;
@@ -62,6 +63,16 @@ module rv32i_core #(
   logic [31:0] rs2_value;
   integer index;
 
+  logic [31:0] csr_mstatus;
+  logic [31:0] csr_mie;
+  logic [31:0] csr_mtvec;
+  logic [31:0] csr_mepc;
+  logic [31:0] csr_mcause;
+  logic [11:0] csr_addr;
+  logic [31:0] csr_rdata;
+  logic [31:0] csr_wdata;
+  logic irq_pending_active;
+
   assign imem_addr = pc;
   assign opcode = imem_rdata[6:0];
   assign rd = imem_rdata[11:7];
@@ -69,6 +80,7 @@ module rv32i_core #(
   assign rs1 = imem_rdata[19:15];
   assign rs2 = imem_rdata[24:20];
   assign funct7 = imem_rdata[31:25];
+  assign csr_addr = imem_rdata[31:20];
   assign rs1_value = (rs1 == 5'd0) ? 32'd0 : regs[rs1];
   assign rs2_value = (rs2 == 5'd0) ? 32'd0 : regs[rs2];
   assign imm_i = {{20{imem_rdata[31]}}, imem_rdata[31:20]};
@@ -83,6 +95,33 @@ module rv32i_core #(
   assign req_addr = mem_addr_q;
   assign req_wdata = mem_wdata_q;
   assign req_wstrb = mem_wstrb_q;
+
+  assign irq_pending_active = (csr_mstatus[3] && ((irq_external && csr_mie[11]) || (irq_timer && csr_mie[7]))) ||
+                              (state == WFI_WAIT && (irq_external || irq_timer));
+
+  always_comb begin
+    csr_rdata = 32'd0;
+    case (csr_addr)
+      12'h300: csr_rdata = csr_mstatus;
+      12'h304: csr_rdata = csr_mie;
+      12'h305: csr_rdata = csr_mtvec;
+      12'h341: csr_rdata = csr_mepc;
+      12'h342: csr_rdata = csr_mcause;
+      12'h344: csr_rdata = {20'd0, irq_external, 3'd0, irq_timer, 7'd0};
+      12'hc00: csr_rdata = perf_cycles;
+      12'hc02: csr_rdata = perf_instructions;
+      default: csr_rdata = 32'd0;
+    endcase
+  end
+
+  always_comb begin
+    case (funct3[1:0])
+      2'b01: csr_wdata = (funct3[2]) ? {27'd0, rs1} : rs1_value;
+      2'b10: csr_wdata = csr_rdata | ((funct3[2]) ? {27'd0, rs1} : rs1_value);
+      2'b11: csr_wdata = csr_rdata & ~((funct3[2]) ? {27'd0, rs1} : rs1_value);
+      default: csr_wdata = csr_rdata;
+    endcase
+  end
 
   function automatic logic [31:0] load_extend(input logic [31:0] value, input logic [2:0] load_funct3, input logic [1:0] byte_offset);
     logic [31:0] shifted;
@@ -116,13 +155,25 @@ module rv32i_core #(
       perf_branches <= 32'd0;
       perf_bus_requests <= 32'd0;
       perf_wait_cycles <= 32'd0;
+      csr_mstatus <= 32'd0;
+      csr_mie <= 32'd0;
+      csr_mtvec <= 32'd0;
+      csr_mepc <= 32'd0;
+      csr_mcause <= 32'd0;
       for (index = 0; index < 32; index = index + 1) regs[index] <= 32'd0;
     end else begin
       perf_cycles <= perf_cycles + 32'd1;
       regs[0] <= 32'd0;
       case (state)
         FETCH: begin
-          if (opcode == OP_LOAD || opcode == OP_STORE) begin
+          if (irq_pending_active) begin
+            csr_mepc <= pc;
+            csr_mcause <= (irq_external) ? 32'h8000_000b : 32'h8000_0007;
+            csr_mstatus[7] <= csr_mstatus[3];
+            csr_mstatus[3] <= 1'b0;
+            pc <= csr_mtvec;
+            state <= FETCH;
+          end else if (opcode == OP_LOAD || opcode == OP_STORE) begin
             mem_addr_q <= effective_addr;
             mem_wdata_q <= rs2_value << (8 * effective_addr[1:0]);
             mem_write_q <= (opcode == OP_STORE);
@@ -192,16 +243,43 @@ module rv32i_core #(
                     10'b0100000_101: regs[rd] <= $signed(rs1_value) >>> rs2_value[4:0];
                     10'b0000000_110: regs[rd] <= rs1_value | rs2_value;
                     10'b0000000_111: regs[rd] <= rs1_value & rs2_value;
+                    10'b0000001_000: regs[rd] <= rs1_value * rs2_value;
+                    10'b0000001_001: regs[rd] <= 32'($signed({{32{rs1_value[31]}}, rs1_value}) * $signed({{32{rs2_value[31]}}, rs2_value}) >>> 32);
+                    10'b0000001_010: regs[rd] <= 32'($signed({{32{rs1_value[31]}}, rs1_value}) * $signed({32'd0, rs2_value}) >>> 32);
+                    10'b0000001_011: regs[rd] <= 32'(({32'd0, rs1_value} * {32'd0, rs2_value}) >> 32);
+                    10'b0000001_100: regs[rd] <= (rs2_value == 32'd0) ? 32'hffff_ffff : ((rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) ? 32'h8000_0000 : 32'($signed(rs1_value) / $signed(rs2_value)));
+                    10'b0000001_101: regs[rd] <= (rs2_value == 32'd0) ? 32'hffff_ffff : (rs1_value / rs2_value);
+                    10'b0000001_110: regs[rd] <= (rs2_value == 32'd0) ? rs1_value : ((rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) ? 32'd0 : 32'($signed(rs1_value) % $signed(rs2_value)));
+                    10'b0000001_111: regs[rd] <= (rs2_value == 32'd0) ? rs1_value : (rs1_value % rs2_value);
                     default: begin regs[rd] <= 32'd0; trap <= 1'b1; state <= TRAP; end
                   endcase
                 end
                 pc <= pc + 32'd4;
               end
               OP_SYSTEM: begin
-                if (imem_rdata == 32'h1050_0073) begin
-                  perf_instructions <= perf_instructions + 32'd1;
+                if (funct3 == 3'b000) begin
+                  if (imem_rdata == 32'h1050_0073) begin
+                    pc <= pc + 32'd4;
+                    state <= WFI_WAIT;
+                  end else if (imem_rdata == 32'h3020_0073) begin
+                    pc <= csr_mepc;
+                    csr_mstatus[3] <= csr_mstatus[7];
+                    csr_mstatus[7] <= 1'b1;
+                  end else begin
+                    trap <= 1'b1;
+                    state <= TRAP;
+                  end
+                end else if (funct3[1:0] != 2'b00) begin
+                  if (rd != 5'd0) regs[rd] <= csr_rdata;
+                  case (csr_addr)
+                    12'h300: csr_mstatus <= {csr_wdata[31:8], csr_wdata[7], csr_wdata[6:4], csr_wdata[3], csr_wdata[2:0]};
+                    12'h304: csr_mie <= csr_wdata;
+                    12'h305: csr_mtvec <= csr_wdata;
+                    12'h341: csr_mepc <= csr_wdata;
+                    12'h342: csr_mcause <= csr_wdata;
+                    default: begin end
+                  endcase
                   pc <= pc + 32'd4;
-                  state <= WFI_WAIT;
                 end else begin
                   trap <= 1'b1;
                   state <= TRAP;
@@ -242,8 +320,16 @@ module rv32i_core #(
           end
         end
         WFI_WAIT: begin
-          if (irq_external) state <= FETCH;
-          else state <= WFI_WAIT;
+          if (irq_external || irq_timer) begin
+            csr_mepc <= pc;
+            csr_mcause <= (irq_external) ? 32'h8000_000b : 32'h8000_0007;
+            csr_mstatus[7] <= csr_mstatus[3];
+            csr_mstatus[3] <= 1'b0;
+            pc <= csr_mtvec;
+            state <= FETCH;
+          end else begin
+            state <= WFI_WAIT;
+          end
         end
         TRAP: begin state <= TRAP; end
         default: state <= TRAP;

@@ -9,6 +9,7 @@ module tb_secure_boot;
   logic [31:0] csr_rdata;
   logic boot_release;
   logic fail;
+  logic [2:0] boot_addr;
   logic [31:0] boot_word;
   integer failures;
 
@@ -22,6 +23,7 @@ module tb_secure_boot;
     .csr_rdata(csr_rdata),
     .boot_release(boot_release),
     .fail(fail),
+    .boot_addr(boot_addr),
     .boot_word(boot_word)
   );
 
