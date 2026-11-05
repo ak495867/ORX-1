@@ -11,29 +11,33 @@ module cordic_engine (
   logic signed [31:0] x_reg;
   logic signed [31:0] y_reg;
   logic signed [31:0] z_reg;
+  logic signed [31:0] x_shift;
+  logic signed [31:0] y_shift;
+  logic signed [31:0] angle_lut;
+  logic d_dir;
   logic mode_rot;
   logic busy;
   logic done;
   logic [3:0] step_cnt;
 
-  function automatic logic signed [15:0] get_atan_lut(input logic [3:0] step);
+  function automatic logic signed [31:0] get_atan_lut(input logic [3:0] step);
     case (step)
-      4'd0:  get_atan_lut = 16'sd8192;
-      4'd1:  get_atan_lut = 16'sd4836;
-      4'd2:  get_atan_lut = 16'sd2555;
-      4'd3:  get_atan_lut = 16'sd1297;
-      4'd4:  get_atan_lut = 16'sd651;
-      4'd5:  get_atan_lut = 16'sd326;
-      4'd6:  get_atan_lut = 16'sd163;
-      4'd7:  get_atan_lut = 16'sd81;
-      4'd8:  get_atan_lut = 16'sd41;
-      4'd9:  get_atan_lut = 16'sd20;
-      4'd10: get_atan_lut = 16'sd10;
-      4'd11: get_atan_lut = 16'sd5;
-      4'd12: get_atan_lut = 16'sd3;
-      4'd13: get_atan_lut = 16'sd1;
-      4'd14: get_atan_lut = 16'sd1;
-      4'd15: get_atan_lut = 16'sd0;
+      4'd0:  get_atan_lut = 32'sd8192;
+      4'd1:  get_atan_lut = 32'sd4836;
+      4'd2:  get_atan_lut = 32'sd2555;
+      4'd3:  get_atan_lut = 32'sd1297;
+      4'd4:  get_atan_lut = 32'sd651;
+      4'd5:  get_atan_lut = 32'sd326;
+      4'd6:  get_atan_lut = 32'sd163;
+      4'd7:  get_atan_lut = 32'sd81;
+      4'd8:  get_atan_lut = 32'sd41;
+      4'd9:  get_atan_lut = 32'sd20;
+      4'd10: get_atan_lut = 32'sd10;
+      4'd11: get_atan_lut = 32'sd5;
+      4'd12: get_atan_lut = 32'sd3;
+      4'd13: get_atan_lut = 32'sd1;
+      4'd14: get_atan_lut = 32'sd1;
+      default: get_atan_lut = 32'sd0;
     endcase
   endfunction
 
@@ -78,14 +82,9 @@ module cordic_engine (
           default: begin end
         endcase
       end else if (busy) begin
-        logic signed [31:0] x_shift;
-        logic signed [31:0] y_shift;
-        logic signed [31:0] angle_lut;
-        logic d_dir;
-
         x_shift = x_reg >>> step_cnt;
         y_shift = y_reg >>> step_cnt;
-        angle_lut = {{16{get_atan_lut(step_cnt)[15]}}, get_atan_lut(step_cnt)};
+        angle_lut = get_atan_lut(step_cnt);
 
         if (mode_rot) begin
           d_dir = (z_reg >= 32'sd0) ? 1'b1 : 1'b0;

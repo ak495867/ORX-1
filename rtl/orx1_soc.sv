@@ -57,6 +57,7 @@ module orx1_soc (
   logic energy_csr_valid;
   logic timer_csr_valid;
   logic dma_csr_valid;
+  logic cordic_csr_valid;
   logic [7:0] accel_csr_addr;
   logic [7:0] boot_csr_addr;
   logic [7:0] uart_csr_addr;
