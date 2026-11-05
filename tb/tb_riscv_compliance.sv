@@ -25,6 +25,7 @@ module tb_riscv_compliance;
   logic [31:0] ram [0:4095];
   integer cycles = 0;
   integer test_passed = 0;
+  integer test_done = 0;
   string test_hex_file;
   string test_sig_file;
 
@@ -87,16 +88,15 @@ module tb_riscv_compliance;
     repeat (3) @(negedge clk);
     reset = 1'b0;
 
-    while (cycles < 5000 && !trap) begin
+    while (cycles < 5000 && !trap && !test_done) begin
       @(posedge clk);
       cycles = cycles + 1;
       if (req_valid && req_write && req_addr == 32'h1000_1000) begin
+        test_done = 1;
         if (req_wdata == 32'd1) begin
           test_passed = 1;
-          break;
         end else begin
           test_passed = 0;
-          break;
         end
       end
     end
