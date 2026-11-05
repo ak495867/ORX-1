@@ -17,6 +17,8 @@ module tb_orx1;
   logic accel_irq;
   integer failures;
 
+  logic sensor_alert;
+
   sensor_pipeline sensor_dut (
     .clk(clk),
     .reset(reset),
@@ -24,8 +26,13 @@ module tb_orx1;
     .sample_data(sample_data),
     .cfg_enable(sensor_enable),
     .cfg_clear(sensor_clear),
+    .cfg_depth(2'b10),
+    .cfg_thresh_en(1'b0),
+    .cfg_thresh_low(16'd0),
+    .cfg_thresh_high(16'hffff),
     .result_valid(sensor_result_valid),
     .result_data(sensor_result),
+    .alert(sensor_alert),
     .irq(sensor_irq)
   );
 
@@ -37,7 +44,9 @@ module tb_orx1;
     .csr_addr(accel_addr),
     .csr_wdata(accel_wdata),
     .csr_rdata(accel_rdata),
-    .irq(accel_irq)
+    .irq(accel_irq),
+    .auto_infer_trigger(1'b0),
+    .auto_infer_sample(16'd0)
   );
 
   always #5 clk = ~clk;
@@ -106,6 +115,22 @@ module tb_orx1;
     #1;
     if (accel_rdata != 32'd110) failures = failures + 1;
     accel_valid = 1'b0;
+
+    write_accel(8'h30, 32'h0504_0302);
+    write_accel(8'h34, 32'h0908_0706);
+    write_accel(8'h08, 32'd10);
+    write_accel(8'h00, 32'h11);
+    @(posedge clk);
+    #1;
+    if (!accel_irq) failures = failures + 1;
+    @(negedge clk);
+    accel_addr = 8'h04;
+    accel_valid = 1'b1;
+    accel_write = 1'b0;
+    #1;
+    if (accel_rdata != 32'd120) failures = failures + 1;
+    accel_valid = 1'b0;
+
     if (failures == 0) $display("ORX1_TEST_PASS");
     else $display("ORX1_TEST_FAIL %0d", failures);
     $finish;

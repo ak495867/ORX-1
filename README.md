@@ -54,7 +54,7 @@ The secure-boot controller processes a fixed number of boot words with a determi
 | Sensor pipeline | `0x40000000` | `0x100` | Sensor configuration and results |
 | Neural accelerator | `0x40001000` | `0x100` | INT8 operand and control registers |
 | Secure boot | `0x40002000` | `0x100` | Verification control and status |
-| UART placeholder | `0x40003000` | `0x100` | Reserved integration window |
+| UART transmitter | `0x40003000` | `0x100` | Hardware 8-N-1 serial TX transmitter |
 | Energy monitor | `0x40004000` | `0x100` | Activity and energy-proxy counters |
 
 The complete register-level description is available in [`docs/register_map.md`](docs/register_map.md).

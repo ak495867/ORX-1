@@ -41,7 +41,8 @@ module cpu_bus_formal;
     .rsp_valid(rsp_valid), .rsp_rdata(rsp_rdata), .rsp_err(rsp_err), .trap(trap),
     .perf_cycles(perf_cycles), .perf_instructions(perf_instructions),
     .perf_loads(perf_loads), .perf_stores(perf_stores), .perf_branches(perf_branches),
-    .perf_bus_requests(perf_bus_requests), .perf_wait_cycles(perf_wait_cycles)
+    .perf_bus_requests(perf_bus_requests), .perf_wait_cycles(perf_wait_cycles),
+    .irq_external(1'b0)
   );
 
   initial begin

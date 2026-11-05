@@ -10,6 +10,8 @@ module tb_soc;
   logic boot_release;
   logic boot_fail;
   logic core_trap;
+  logic sensor_alert;
+  logic uart_tx;
   integer failures = 0;
 
   always #5 clk = ~clk;
@@ -18,7 +20,7 @@ module tb_soc;
     .clk(clk), .reset(reset), .sensor_valid(sensor_valid), .sensor_data(sensor_data),
     .sensor_result_valid(sensor_result_valid), .sensor_result(sensor_result),
     .accelerator_irq(accelerator_irq), .boot_release(boot_release), .boot_fail(boot_fail),
-    .core_trap(core_trap)
+    .core_trap(core_trap), .sensor_alert(sensor_alert), .uart_tx(uart_tx)
   );
 
   task automatic sample(input logic [15:0] value);
@@ -46,6 +48,7 @@ module tb_soc;
     if (!sensor_result_valid || sensor_result != 16'd35) failures = failures + 1;
     release dut.sensor_enable;
     if (boot_release || boot_fail) failures = failures + 1;
+    if (!uart_tx) failures = failures + 1;
     if (failures == 0) $display("SOC_TEST_PASS");
     else $display("SOC_TEST_FAIL %0d", failures);
     $finish;

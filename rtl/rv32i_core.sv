@@ -21,7 +21,8 @@ module rv32i_core #(
   output logic [31:0] perf_stores,
   output logic [31:0] perf_branches,
   output logic [31:0] perf_bus_requests,
-  output logic [31:0] perf_wait_cycles
+  output logic [31:0] perf_wait_cycles,
+  input logic irq_external
 );
   localparam logic [6:0] OP_LUI = 7'b0110111;
   localparam logic [6:0] OP_AUIPC = 7'b0010111;
@@ -34,7 +35,7 @@ module rv32i_core #(
   localparam logic [6:0] OP_OP = 7'b0110011;
   localparam logic [6:0] OP_SYSTEM = 7'b1110011;
 
-  typedef enum logic [1:0] {FETCH, MEM_REQUEST, MEM_WAIT, TRAP} state_t;
+  typedef enum logic [2:0] {FETCH, MEM_REQUEST, MEM_WAIT, WFI_WAIT, TRAP} state_t;
   state_t state;
   logic [31:0] pc;
   logic [31:0] regs [0:31];
@@ -196,7 +197,16 @@ module rv32i_core #(
                 end
                 pc <= pc + 32'd4;
               end
-              OP_SYSTEM: begin trap <= 1'b1; state <= TRAP; end
+              OP_SYSTEM: begin
+                if (imem_rdata == 32'h1050_0073) begin
+                  perf_instructions <= perf_instructions + 32'd1;
+                  pc <= pc + 32'd4;
+                  state <= WFI_WAIT;
+                end else begin
+                  trap <= 1'b1;
+                  state <= TRAP;
+                end
+              end
               default: begin trap <= 1'b1; state <= TRAP; end
             endcase
           end
@@ -230,6 +240,10 @@ module rv32i_core #(
             if (rsp_err) state <= TRAP;
             else begin pc <= pc + 32'd4; state <= FETCH; end
           end
+        end
+        WFI_WAIT: begin
+          if (irq_external) state <= FETCH;
+          else state <= WFI_WAIT;
         end
         TRAP: begin state <= TRAP; end
         default: state <= TRAP;

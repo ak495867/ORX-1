@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 BUILD := build
-RTL := rtl/orx1_pkg.sv rtl/rv32i_core.sv rtl/sensor_pipeline.sv rtl/neural_accel.sv rtl/secure_boot.sv rtl/energy_monitor.sv rtl/orx1_soc.sv
+RTL := rtl/orx1_pkg.sv rtl/rv32i_core.sv rtl/sensor_pipeline.sv rtl/neural_accel.sv rtl/secure_boot.sv rtl/uart_tx.sv rtl/energy_monitor.sv rtl/orx1_soc.sv
 TB_LEAF := tb/tb_orx1.sv
 TB_BOOT := tb/tb_secure_boot.sv
 TB_SOC := tb/tb_soc.sv

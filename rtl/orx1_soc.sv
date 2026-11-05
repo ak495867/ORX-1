@@ -8,7 +8,9 @@ module orx1_soc (
   output logic accelerator_irq,
   output logic boot_release,
   output logic boot_fail,
-  output logic core_trap
+  output logic core_trap,
+  output logic sensor_alert,
+  output logic uart_tx
 );
   logic [31:0] imem_addr;
   logic [31:0] imem_rdata;
@@ -25,6 +27,7 @@ module orx1_soc (
   logic [31:0] sensor_csr_rdata;
   logic [31:0] accel_csr_rdata;
   logic [31:0] boot_csr_rdata;
+  logic [31:0] uart_csr_rdata;
   logic [31:0] energy_csr_rdata;
   logic [31:0] cpu_cycles;
   logic [31:0] cpu_instructions;
@@ -35,14 +38,22 @@ module orx1_soc (
   logic [31:0] cpu_wait_cycles;
   logic sensor_enable;
   logic sensor_clear;
+  logic sensor_thresh_en;
+  logic [1:0] sensor_depth;
+  logic [15:0] sensor_thresh_low;
+  logic [15:0] sensor_thresh_high;
+  logic sensor_auto_infer;
+  logic auto_infer_trigger;
   logic [15:0] sensor_bus_data;
   logic sensor_bus_valid;
   logic sensor_irq;
   logic accel_csr_valid;
   logic boot_csr_valid;
+  logic uart_csr_valid;
   logic energy_csr_valid;
   logic [7:0] accel_csr_addr;
   logic [7:0] boot_csr_addr;
+  logic [7:0] uart_csr_addr;
   logic [7:0] energy_csr_addr;
   logic [31:0] boot_word;
   logic [2:0] boot_addr;
@@ -59,6 +70,7 @@ module orx1_soc (
   logic d_ready;
   logic d_write;
   logic [31:0] d_addr;
+  logic core_irq;
 
   assign d_valid = req_valid;
   assign d_ready = req_ready;
@@ -80,11 +92,15 @@ module orx1_soc (
   assign sensor_bus_data = sensor_valid ? sensor_data : req_wdata[15:0];
   assign accel_csr_valid = accel_select;
   assign boot_csr_valid = boot_select;
+  assign uart_csr_valid = uart_select;
   assign energy_csr_valid = energy_select;
   assign accel_csr_addr = req_addr[7:0];
   assign boot_csr_addr = req_addr[7:0];
+  assign uart_csr_addr = req_addr[7:0];
   assign energy_csr_addr = req_addr[7:0];
   assign boot_word = boot_rom[boot_addr];
+  assign auto_infer_trigger = sensor_auto_infer & sensor_result_valid;
+  assign core_irq = sensor_irq | accelerator_irq | sensor_alert;
 
   always_comb begin
     rsp_rdata = 32'd0;
@@ -93,6 +109,7 @@ module orx1_soc (
     else if (sensor_select) rsp_rdata = sensor_csr_rdata;
     else if (accel_select) rsp_rdata = accel_csr_rdata;
     else if (boot_select) rsp_rdata = boot_csr_rdata;
+    else if (uart_select) rsp_rdata = uart_csr_rdata;
     else if (energy_select) rsp_rdata = energy_csr_rdata;
   end
 
@@ -100,12 +117,24 @@ module orx1_soc (
     if (reset) begin
       sensor_enable <= 1'b0;
       sensor_clear <= 1'b0;
+      sensor_thresh_en <= 1'b0;
+      sensor_depth <= 2'b10;
+      sensor_thresh_low <= 16'd0;
+      sensor_thresh_high <= 16'hffff;
+      sensor_auto_infer <= 1'b0;
     end else begin
       sensor_clear <= 1'b0;
       if (sensor_select && req_write) begin
         case (req_addr[7:0])
-          8'h00: sensor_enable <= req_wdata[0];
+          8'h00: begin
+            sensor_enable <= req_wdata[0];
+            sensor_thresh_en <= req_wdata[1];
+            sensor_auto_infer <= req_wdata[2];
+          end
           8'h04: sensor_clear <= req_wdata[0];
+          8'h10: sensor_depth <= req_wdata[1:0];
+          8'h14: sensor_thresh_low <= req_wdata[15:0];
+          8'h18: sensor_thresh_high <= req_wdata[15:0];
           default: begin end
         endcase
       end
@@ -121,10 +150,14 @@ module orx1_soc (
   always_comb begin
     sensor_csr_rdata = 32'd0;
     case (req_addr[7:0])
-      8'h00: sensor_csr_rdata = {31'd0, sensor_enable};
+      8'h00: sensor_csr_rdata = {29'd0, sensor_auto_infer, sensor_thresh_en, sensor_enable};
       8'h04: sensor_csr_rdata = {31'd0, sensor_irq};
       8'h08: sensor_csr_rdata = {16'd0, sensor_result};
       8'h0c: sensor_csr_rdata = {31'd0, sensor_result_valid};
+      8'h10: sensor_csr_rdata = {30'd0, sensor_depth};
+      8'h14: sensor_csr_rdata = {16'd0, sensor_thresh_low};
+      8'h18: sensor_csr_rdata = {16'd0, sensor_thresh_high};
+      8'h1c: sensor_csr_rdata = {31'd0, sensor_alert};
       default: sensor_csr_rdata = 32'd0;
     endcase
   end
@@ -136,24 +169,36 @@ module orx1_soc (
     .rsp_valid(rsp_valid), .rsp_rdata(rsp_rdata), .rsp_err(rsp_err), .trap(core_trap),
     .perf_cycles(cpu_cycles), .perf_instructions(cpu_instructions), .perf_loads(cpu_loads),
     .perf_stores(cpu_stores), .perf_branches(cpu_branches), .perf_bus_requests(cpu_bus_requests),
-    .perf_wait_cycles(cpu_wait_cycles)
+    .perf_wait_cycles(cpu_wait_cycles), .irq_external(core_irq)
   );
 
   sensor_pipeline sensor (
     .clk(clk), .reset(reset), .sample_valid(sensor_bus_valid), .sample_data(sensor_bus_data),
-    .cfg_enable(sensor_enable), .cfg_clear(sensor_clear), .result_valid(sensor_result_valid),
-    .result_data(sensor_result), .irq(sensor_irq)
+    .cfg_enable(sensor_enable), .cfg_clear(sensor_clear),
+    .cfg_depth(sensor_depth), .cfg_thresh_en(sensor_thresh_en),
+    .cfg_thresh_low(sensor_thresh_low), .cfg_thresh_high(sensor_thresh_high),
+    .result_valid(sensor_result_valid), .result_data(sensor_result),
+    .alert(sensor_alert), .irq(sensor_irq)
   );
 
   neural_accel accelerator (
     .clk(clk), .reset(reset), .csr_valid(accel_csr_valid), .csr_write(req_write),
-    .csr_addr(accel_csr_addr), .csr_wdata(req_wdata), .csr_rdata(accel_csr_rdata), .irq(accelerator_irq)
+    .csr_addr(accel_csr_addr), .csr_wdata(req_wdata), .csr_rdata(accel_csr_rdata),
+    .irq(accelerator_irq),
+    .auto_infer_trigger(auto_infer_trigger),
+    .auto_infer_sample(sensor_result)
   );
 
   secure_boot boot_controller (
     .clk(clk), .reset(reset), .csr_valid(boot_csr_valid), .csr_write(req_write),
     .csr_addr(boot_csr_addr), .csr_wdata(req_wdata), .csr_rdata(boot_csr_rdata),
     .boot_release(boot_release), .fail(boot_fail), .boot_addr(boot_addr), .boot_word(boot_word)
+  );
+
+  uart_tx serial_tx (
+    .clk(clk), .reset(reset), .csr_valid(uart_csr_valid), .csr_write(req_write),
+    .csr_addr(uart_csr_addr), .csr_wdata(req_wdata), .csr_rdata(uart_csr_rdata),
+    .tx(uart_tx)
   );
 
   energy_monitor activity_monitor (
