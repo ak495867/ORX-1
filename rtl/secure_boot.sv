@@ -13,6 +13,8 @@ module secure_boot #(
   output logic [2:0] boot_addr,
   input logic [31:0] boot_word
 );
+  typedef enum logic [1:0] {SB_IDLE, SB_LOAD, SB_HASH} sb_state_t;
+  sb_state_t sb_state;
   logic running;
   logic complete;
   logic [31:0] digest;
@@ -30,6 +32,8 @@ module secure_boot #(
   logic [31:0] efuse_hash [0:7];
   logic [511:0] sha_block_flat;
   integer i;
+
+  assign running = (sb_state != SB_IDLE);
 
   assign sha_block_flat = {
     sha_block[15], sha_block[14], sha_block[13], sha_block[12],
@@ -65,7 +69,7 @@ module secure_boot #(
 
   always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
-      running <= 1'b0;
+      sb_state <= SB_IDLE;
       complete <= 1'b0;
       boot_release <= 1'b0;
       fail <= 1'b0;
@@ -82,16 +86,17 @@ module secure_boot #(
       if (csr_valid && csr_write) begin
         case (csr_addr)
           8'h00: begin
-            mode_sha256 <= csr_wdata[5];
-            if (csr_wdata[0] && !running) begin
-              running <= 1'b1;
-              complete <= 1'b0;
-              boot_release <= 1'b0;
-              fail <= 1'b0;
-              digest <= 32'h811c_9dc5;
-              boot_index <= 3'd0;
-              if (csr_wdata[5]) begin
-                sha_start <= 1'b1;
+            if (csr_wdata[1]) complete <= 1'b0;
+            if (sb_state == SB_IDLE) begin
+              mode_sha256 <= csr_wdata[5];
+              if (csr_wdata[0]) begin
+                sb_state <= SB_LOAD;
+                complete <= 1'b0;
+                boot_release <= 1'b0;
+                fail <= 1'b0;
+                digest <= 32'h811c_9dc5;
+                boot_index <= 3'd0;
+                for (i = 0; i < 16; i = i + 1) sha_block[i] <= 32'd0;
               end
             end
           end
@@ -101,22 +106,34 @@ module secure_boot #(
           default: begin end
         endcase
       end
-      if (running) begin
-        digest <= next_digest;
-        sha_block[boot_index] <= boot_word;
-        if (boot_index == LAST_INDEX) begin
-          if (!mode_sha256) begin
-            running <= 1'b0;
-            complete <= 1'b1;
-            if (next_digest == expected_digest) begin
-              boot_release <= 1'b1;
-              fail <= 1'b0;
+      case (sb_state)
+        SB_LOAD: begin
+          digest <= next_digest;
+          sha_block[{1'b0, boot_index}] <= boot_word;
+          if (boot_index == LAST_INDEX) begin
+            if (!mode_sha256) begin
+              sb_state <= SB_IDLE;
+              complete <= 1'b1;
+              if (next_digest == expected_digest) begin
+                boot_release <= 1'b1;
+                fail <= 1'b0;
+              end else begin
+                boot_release <= 1'b0;
+                fail <= 1'b1;
+              end
             end else begin
-              boot_release <= 1'b0;
-              fail <= 1'b1;
+              sha_block[{1'b0, WORDS}] <= 32'h8000_0000;
+              sha_block[15] <= {24'd0, WORDS, 5'd0};
+              sha_start <= 1'b1;
+              sb_state <= SB_HASH;
             end
-          end else if (sha_done) begin
-            running <= 1'b0;
+          end else begin
+            boot_index <= boot_index + 3'd1;
+          end
+        end
+        SB_HASH: begin
+          if (sha_done) begin
+            sb_state <= SB_IDLE;
             complete <= 1'b1;
             if (sha_digest == {efuse_hash[7], efuse_hash[6], efuse_hash[5], efuse_hash[4], efuse_hash[3], efuse_hash[2], efuse_hash[1], efuse_hash[0]}) begin
               boot_release <= 1'b1;
@@ -126,10 +143,9 @@ module secure_boot #(
               fail <= 1'b1;
             end
           end
-        end else begin
-          boot_index <= boot_index + 3'd1;
         end
-      end
+        default: begin end
+      endcase
     end
   end
 endmodule

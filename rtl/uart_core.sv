@@ -32,8 +32,10 @@ module uart_core (
   logic rx_valid;
   logic rx_overrun;
   logic rx_sync_0, rx_sync_1;
+  logic rx_irq_en;
+  logic tx_irq_en;
 
-  assign uart_irq = rx_valid | tx_done;
+  assign uart_irq = (rx_valid & rx_irq_en) | (tx_done & tx_irq_en);
 
   always_comb begin
     csr_rdata = 32'd0;
@@ -41,6 +43,7 @@ module uart_core (
       8'h00: csr_rdata = {24'd0, rx_data};
       8'h04: csr_rdata = {28'd0, rx_overrun, rx_valid, tx_done, tx_busy};
       8'h08: csr_rdata = {16'd0, baud_div};
+      8'h10: csr_rdata = {30'd0, tx_irq_en, rx_irq_en};
       default: csr_rdata = 32'd0;
     endcase
   end
@@ -65,6 +68,8 @@ module uart_core (
       rx_overrun <= 1'b0;
       rx_sync_0 <= 1'b1;
       rx_sync_1 <= 1'b1;
+      rx_irq_en <= 1'b0;
+      tx_irq_en <= 1'b0;
     end else begin
       rx_sync_0 <= rx;
       rx_sync_1 <= rx_sync_0;
@@ -87,6 +92,11 @@ module uart_core (
           8'h0c: begin
             if (csr_wdata[0]) rx_valid <= 1'b0;
             if (csr_wdata[1]) rx_overrun <= 1'b0;
+            if (csr_wdata[2]) tx_done <= 1'b0;
+          end
+          8'h10: begin
+            rx_irq_en <= csr_wdata[0];
+            tx_irq_en <= csr_wdata[1];
           end
           default: begin end
         endcase

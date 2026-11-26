@@ -25,16 +25,17 @@ module rv32i_core #(
   input logic irq_external,
   input logic irq_timer
 );
-  localparam logic [6:0] OP_LUI = 7'b0110111;
-  localparam logic [6:0] OP_AUIPC = 7'b0010111;
-  localparam logic [6:0] OP_JAL = 7'b1101111;
-  localparam logic [6:0] OP_JALR = 7'b1100111;
-  localparam logic [6:0] OP_BRANCH = 7'b1100011;
-  localparam logic [6:0] OP_LOAD = 7'b0000011;
-  localparam logic [6:0] OP_STORE = 7'b0100011;
-  localparam logic [6:0] OP_OPIMM = 7'b0010011;
-  localparam logic [6:0] OP_OP = 7'b0110011;
-  localparam logic [6:0] OP_SYSTEM = 7'b1110011;
+  localparam logic [6:0] OP_LUI      = 7'b0110111;
+  localparam logic [6:0] OP_AUIPC    = 7'b0010111;
+  localparam logic [6:0] OP_JAL      = 7'b1101111;
+  localparam logic [6:0] OP_JALR     = 7'b1100111;
+  localparam logic [6:0] OP_BRANCH   = 7'b1100011;
+  localparam logic [6:0] OP_LOAD     = 7'b0000011;
+  localparam logic [6:0] OP_STORE    = 7'b0100011;
+  localparam logic [6:0] OP_OPIMM    = 7'b0010011;
+  localparam logic [6:0] OP_OP       = 7'b0110011;
+  localparam logic [6:0] OP_MISC_MEM = 7'b0001111;
+  localparam logic [6:0] OP_SYSTEM   = 7'b1110011;
 
   typedef enum logic [2:0] {FETCH, MEM_REQUEST, MEM_WAIT, WFI_WAIT, TRAP} state_t;
   state_t state;
@@ -71,6 +72,9 @@ module rv32i_core #(
   logic [11:0] csr_addr;
   logic [31:0] csr_rdata;
   logic [31:0] csr_wdata;
+  logic csr_write_en;
+  logic irq_ext_en;
+  logic irq_tim_en;
   logic irq_pending_active;
 
   assign imem_addr = pc;
@@ -96,8 +100,10 @@ module rv32i_core #(
   assign req_wdata = mem_wdata_q;
   assign req_wstrb = mem_wstrb_q;
 
-  assign irq_pending_active = (csr_mstatus[3] && ((irq_external && csr_mie[11]) || (irq_timer && csr_mie[7]))) ||
-                              (state == WFI_WAIT && (irq_external || irq_timer));
+  assign irq_ext_en = irq_external && csr_mie[11];
+  assign irq_tim_en = irq_timer && csr_mie[7];
+  assign irq_pending_active = csr_mstatus[3] && (irq_ext_en || irq_tim_en);
+  assign csr_write_en = (funct3[1:0] == 2'b01) || (rs1 != 5'd0);
 
   always_comb begin
     csr_rdata = 32'd0;
@@ -168,7 +174,7 @@ module rv32i_core #(
         FETCH: begin
           if (irq_pending_active) begin
             csr_mepc <= pc;
-            csr_mcause <= (irq_external) ? 32'h8000_000b : 32'h8000_0007;
+            csr_mcause <= irq_ext_en ? 32'h8000_000b : 32'h8000_0007;
             csr_mstatus[7] <= csr_mstatus[3];
             csr_mstatus[3] <= 1'b0;
             pc <= csr_mtvec;
@@ -215,46 +221,64 @@ module rv32i_core #(
                 endcase
               end
               OP_OPIMM: begin
-                if (rd != 5'd0) begin
-                  case (funct3)
-                    3'b000: regs[rd] <= rs1_value + imm_i;
-                    3'b010: regs[rd] <= ($signed(rs1_value) < $signed(imm_i)) ? 32'd1 : 32'd0;
-                    3'b011: regs[rd] <= (rs1_value < imm_i) ? 32'd1 : 32'd0;
-                    3'b100: regs[rd] <= rs1_value ^ imm_i;
-                    3'b110: regs[rd] <= rs1_value | imm_i;
-                    3'b111: regs[rd] <= rs1_value & imm_i;
-                    3'b001: regs[rd] <= rs1_value << imem_rdata[24:20];
-                    3'b101: regs[rd] <= (funct7[5]) ? $signed(rs1_value) >>> imem_rdata[24:20] : rs1_value >> imem_rdata[24:20];
-                    default: begin regs[rd] <= 32'd0; trap <= 1'b1; state <= TRAP; end
-                  endcase
-                end
-                pc <= pc + 32'd4;
+                case (funct3)
+                  3'b000: begin if (rd != 5'd0) regs[rd] <= rs1_value + imm_i; pc <= pc + 32'd4; end
+                  3'b010: begin if (rd != 5'd0) regs[rd] <= ($signed(rs1_value) < $signed(imm_i)) ? 32'd1 : 32'd0; pc <= pc + 32'd4; end
+                  3'b011: begin if (rd != 5'd0) regs[rd] <= (rs1_value < imm_i) ? 32'd1 : 32'd0; pc <= pc + 32'd4; end
+                  3'b100: begin if (rd != 5'd0) regs[rd] <= rs1_value ^ imm_i; pc <= pc + 32'd4; end
+                  3'b110: begin if (rd != 5'd0) regs[rd] <= rs1_value | imm_i; pc <= pc + 32'd4; end
+                  3'b111: begin if (rd != 5'd0) regs[rd] <= rs1_value & imm_i; pc <= pc + 32'd4; end
+                  3'b001: begin
+                    if (funct7 == 7'b0000000) begin
+                      if (rd != 5'd0) regs[rd] <= rs1_value << imem_rdata[24:20];
+                      pc <= pc + 32'd4;
+                    end else begin
+                      trap <= 1'b1;
+                      state <= TRAP;
+                    end
+                  end
+                  3'b101: begin
+                    if (funct7 == 7'b0000000 || funct7 == 7'b0100000) begin
+                      if (rd != 5'd0) regs[rd] <= (funct7[5]) ? $signed(rs1_value) >>> imem_rdata[24:20] : rs1_value >> imem_rdata[24:20];
+                      pc <= pc + 32'd4;
+                    end else begin
+                      trap <= 1'b1;
+                      state <= TRAP;
+                    end
+                  end
+                  default: begin trap <= 1'b1; state <= TRAP; end
+                endcase
               end
               OP_OP: begin
-                if (rd != 5'd0) begin
-                  case ({funct7, funct3})
-                    10'b0000000_000: regs[rd] <= rs1_value + rs2_value;
-                    10'b0100000_000: regs[rd] <= rs1_value - rs2_value;
-                    10'b0000000_001: regs[rd] <= rs1_value << rs2_value[4:0];
-                    10'b0000000_010: regs[rd] <= ($signed(rs1_value) < $signed(rs2_value)) ? 32'd1 : 32'd0;
-                    10'b0000000_011: regs[rd] <= (rs1_value < rs2_value) ? 32'd1 : 32'd0;
-                    10'b0000000_100: regs[rd] <= rs1_value ^ rs2_value;
-                    10'b0000000_101: regs[rd] <= rs1_value >> rs2_value[4:0];
-                    10'b0100000_101: regs[rd] <= $signed(rs1_value) >>> rs2_value[4:0];
-                    10'b0000000_110: regs[rd] <= rs1_value | rs2_value;
-                    10'b0000000_111: regs[rd] <= rs1_value & rs2_value;
-                    10'b0000001_000: regs[rd] <= rs1_value * rs2_value;
-                    10'b0000001_001: regs[rd] <= 32'($signed({{32{rs1_value[31]}}, rs1_value}) * $signed({{32{rs2_value[31]}}, rs2_value}) >>> 32);
-                    10'b0000001_010: regs[rd] <= 32'($signed({{32{rs1_value[31]}}, rs1_value}) * $signed({32'd0, rs2_value}) >>> 32);
-                    10'b0000001_011: regs[rd] <= 32'(({32'd0, rs1_value} * {32'd0, rs2_value}) >> 32);
-                    10'b0000001_100: regs[rd] <= (rs2_value == 32'd0) ? 32'hffff_ffff : ((rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) ? 32'h8000_0000 : 32'($signed(rs1_value) / $signed(rs2_value)));
-                    10'b0000001_101: regs[rd] <= (rs2_value == 32'd0) ? 32'hffff_ffff : (rs1_value / rs2_value);
-                    10'b0000001_110: regs[rd] <= (rs2_value == 32'd0) ? rs1_value : ((rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) ? 32'd0 : 32'($signed(rs1_value) % $signed(rs2_value)));
-                    10'b0000001_111: regs[rd] <= (rs2_value == 32'd0) ? rs1_value : (rs1_value % rs2_value);
-                    default: begin regs[rd] <= 32'd0; trap <= 1'b1; state <= TRAP; end
-                  endcase
+                case ({funct7, funct3})
+                  10'b0000000_000: begin if (rd != 5'd0) regs[rd] <= rs1_value + rs2_value; pc <= pc + 32'd4; end
+                  10'b0100000_000: begin if (rd != 5'd0) regs[rd] <= rs1_value - rs2_value; pc <= pc + 32'd4; end
+                  10'b0000000_001: begin if (rd != 5'd0) regs[rd] <= rs1_value << rs2_value[4:0]; pc <= pc + 32'd4; end
+                  10'b0000000_010: begin if (rd != 5'd0) regs[rd] <= ($signed(rs1_value) < $signed(rs2_value)) ? 32'd1 : 32'd0; pc <= pc + 32'd4; end
+                  10'b0000000_011: begin if (rd != 5'd0) regs[rd] <= (rs1_value < rs2_value) ? 32'd1 : 32'd0; pc <= pc + 32'd4; end
+                  10'b0000000_100: begin if (rd != 5'd0) regs[rd] <= rs1_value ^ rs2_value; pc <= pc + 32'd4; end
+                  10'b0000000_101: begin if (rd != 5'd0) regs[rd] <= rs1_value >> rs2_value[4:0]; pc <= pc + 32'd4; end
+                  10'b0100000_101: begin if (rd != 5'd0) regs[rd] <= $signed(rs1_value) >>> rs2_value[4:0]; pc <= pc + 32'd4; end
+                  10'b0000000_110: begin if (rd != 5'd0) regs[rd] <= rs1_value | rs2_value; pc <= pc + 32'd4; end
+                  10'b0000000_111: begin if (rd != 5'd0) regs[rd] <= rs1_value & rs2_value; pc <= pc + 32'd4; end
+                  10'b0000001_000: begin if (rd != 5'd0) regs[rd] <= rs1_value * rs2_value; pc <= pc + 32'd4; end
+                  10'b0000001_001: begin if (rd != 5'd0) regs[rd] <= 32'($signed({{32{rs1_value[31]}}, rs1_value}) * $signed({{32{rs2_value[31]}}, rs2_value}) >>> 32); pc <= pc + 32'd4; end
+                  10'b0000001_010: begin if (rd != 5'd0) regs[rd] <= 32'($signed({{32{rs1_value[31]}}, rs1_value}) * $signed({32'd0, rs2_value}) >>> 32); pc <= pc + 32'd4; end
+                  10'b0000001_011: begin if (rd != 5'd0) regs[rd] <= 32'(({32'd0, rs1_value} * {32'd0, rs2_value}) >> 32); pc <= pc + 32'd4; end
+                  10'b0000001_100: begin if (rd != 5'd0) regs[rd] <= (rs2_value == 32'd0) ? 32'hffff_ffff : ((rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) ? 32'h8000_0000 : 32'($signed(rs1_value) / $signed(rs2_value))); pc <= pc + 32'd4; end
+                  10'b0000001_101: begin if (rd != 5'd0) regs[rd] <= (rs2_value == 32'd0) ? 32'hffff_ffff : (rs1_value / rs2_value); pc <= pc + 32'd4; end
+                  10'b0000001_110: begin if (rd != 5'd0) regs[rd] <= (rs2_value == 32'd0) ? rs1_value : ((rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) ? 32'd0 : 32'($signed(rs1_value) % $signed(rs2_value))); pc <= pc + 32'd4; end
+                  10'b0000001_111: begin if (rd != 5'd0) regs[rd] <= (rs2_value == 32'd0) ? rs1_value : (rs1_value % rs2_value); pc <= pc + 32'd4; end
+                  default: begin trap <= 1'b1; state <= TRAP; end
+                endcase
+              end
+              OP_MISC_MEM: begin
+                if (funct3 == 3'b000 || funct3 == 3'b001) begin
+                  pc <= pc + 32'd4;
+                end else begin
+                  trap <= 1'b1;
+                  state <= TRAP;
                 end
-                pc <= pc + 32'd4;
               end
               OP_SYSTEM: begin
                 if (funct3 == 3'b000) begin
@@ -265,20 +289,44 @@ module rv32i_core #(
                     pc <= csr_mepc;
                     csr_mstatus[3] <= csr_mstatus[7];
                     csr_mstatus[7] <= 1'b1;
+                  end else if (imem_rdata == 32'h0000_0073) begin
+                    if (csr_mtvec != 32'd0) begin
+                      csr_mepc <= pc;
+                      csr_mcause <= 32'd11;
+                      csr_mstatus[7] <= csr_mstatus[3];
+                      csr_mstatus[3] <= 1'b0;
+                      pc <= csr_mtvec;
+                    end else begin
+                      trap <= 1'b1;
+                      state <= TRAP;
+                    end
+                  end else if (imem_rdata == 32'h0010_0073) begin
+                    if (csr_mtvec != 32'd0) begin
+                      csr_mepc <= pc;
+                      csr_mcause <= 32'd3;
+                      csr_mstatus[7] <= csr_mstatus[3];
+                      csr_mstatus[3] <= 1'b0;
+                      pc <= csr_mtvec;
+                    end else begin
+                      trap <= 1'b1;
+                      state <= TRAP;
+                    end
                   end else begin
                     trap <= 1'b1;
                     state <= TRAP;
                   end
                 end else if (funct3[1:0] != 2'b00) begin
                   if (rd != 5'd0) regs[rd] <= csr_rdata;
-                  case (csr_addr)
-                    12'h300: csr_mstatus <= {csr_wdata[31:8], csr_wdata[7], csr_wdata[6:4], csr_wdata[3], csr_wdata[2:0]};
-                    12'h304: csr_mie <= csr_wdata;
-                    12'h305: csr_mtvec <= csr_wdata;
-                    12'h341: csr_mepc <= csr_wdata;
-                    12'h342: csr_mcause <= csr_wdata;
-                    default: begin end
-                  endcase
+                  if (csr_write_en) begin
+                    case (csr_addr)
+                      12'h300: csr_mstatus <= csr_wdata;
+                      12'h304: csr_mie <= csr_wdata;
+                      12'h305: csr_mtvec <= csr_wdata;
+                      12'h341: csr_mepc <= csr_wdata;
+                      12'h342: csr_mcause <= csr_wdata;
+                      default: begin end
+                    endcase
+                  end
                   pc <= pc + 32'd4;
                 end else begin
                   trap <= 1'b1;
@@ -320,12 +368,14 @@ module rv32i_core #(
           end
         end
         WFI_WAIT: begin
-          if (irq_external || irq_timer) begin
-            csr_mepc <= pc;
-            csr_mcause <= (irq_external) ? 32'h8000_000b : 32'h8000_0007;
-            csr_mstatus[7] <= csr_mstatus[3];
-            csr_mstatus[3] <= 1'b0;
-            pc <= csr_mtvec;
+          if (irq_ext_en || irq_tim_en) begin
+            if (csr_mstatus[3]) begin
+              csr_mepc <= pc;
+              csr_mcause <= irq_ext_en ? 32'h8000_000b : 32'h8000_0007;
+              csr_mstatus[7] <= csr_mstatus[3];
+              csr_mstatus[3] <= 1'b0;
+              pc <= csr_mtvec;
+            end
             state <= FETCH;
           end else begin
             state <= WFI_WAIT;

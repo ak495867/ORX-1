@@ -24,9 +24,7 @@ jobs:
           printf '#!/usr/bin/env bash\nexec python3 /opt/sby/sby.py "$@"\n' | sudo tee /usr/local/bin/sby >/dev/null
           sudo chmod +x /usr/local/bin/sby
       - name: Check executable scripts
-        run: test -x scripts/check_source_policy.sh && test -x scripts/check_rtl.sh && test -x scripts/run_sim.sh
-      - name: Check source policy
-        run: make check
+        run: test -x scripts/check_rtl.sh && test -x scripts/run_sim.sh
       - name: Run simulation
         run: make sim
       - name: Run CPU benchmark

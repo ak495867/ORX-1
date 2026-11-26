@@ -12,6 +12,10 @@ module tb_secure_boot;
   logic [2:0] boot_addr;
   logic [31:0] boot_word;
   integer failures;
+  integer idx;
+  integer wait_cnt;
+  logic [31:0] expected_fnv;
+  logic [255:0] captured_sha;
 
   secure_boot dut (
     .clk(clk),
@@ -42,6 +46,20 @@ module tb_secure_boot;
     end
   endtask
 
+  task automatic read_csr(input logic [7:0] address, output logic [31:0] value);
+    begin
+      @(negedge clk);
+      csr_addr = address;
+      csr_valid = 1'b1;
+      csr_write = 1'b0;
+      #1;
+      value = csr_rdata;
+      csr_valid = 1'b0;
+    end
+  endtask
+
+  logic [31:0] status_val;
+
   initial begin
     clk = 1'b0;
     reset = 1'b1;
@@ -53,11 +71,49 @@ module tb_secure_boot;
     failures = 0;
     repeat (2) @(negedge clk);
     reset = 1'b0;
+
     write_csr(8'h08, 32'd0);
     write_csr(8'h00, 32'd1);
     repeat (6) @(posedge clk);
     #1;
     if (!fail || boot_release) failures = failures + 1;
+
+    boot_word = 32'h1234_5678;
+    expected_fnv = 32'h811c_9dc5;
+    for (idx = 0; idx < 4; idx = idx + 1) begin
+      expected_fnv = (expected_fnv ^ boot_word) * 32'h0100_0193;
+    end
+    write_csr(8'h08, expected_fnv);
+    write_csr(8'h00, 32'd1);
+    repeat (6) @(posedge clk);
+    #1;
+    if (!boot_release || fail) failures = failures + 1;
+
+    write_csr(8'h00, 32'h21);
+    wait_cnt = 0;
+    status_val = 32'd0;
+    while (!status_val[1] && wait_cnt < 100) begin
+      @(posedge clk);
+      read_csr(8'h00, status_val);
+      wait_cnt = wait_cnt + 1;
+    end
+    if (!status_val[1] || !fail || boot_release) failures = failures + 1;
+
+    captured_sha = dut.sha_digest;
+    for (idx = 0; idx < 8; idx = idx + 1) begin
+      write_csr(8'h0c, idx[31:0]);
+      write_csr(8'h10, captured_sha[idx*32 +: 32]);
+    end
+    write_csr(8'h00, 32'h21);
+    wait_cnt = 0;
+    status_val = 32'd0;
+    while (!status_val[1] && wait_cnt < 100) begin
+      @(posedge clk);
+      read_csr(8'h00, status_val);
+      wait_cnt = wait_cnt + 1;
+    end
+    if (!status_val[1] || !boot_release || fail) failures = failures + 1;
+
     if (failures == 0) $display("SECURE_BOOT_TEST_PASS");
     else $display("SECURE_BOOT_TEST_FAIL %0d", failures);
     $finish;

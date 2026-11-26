@@ -144,10 +144,10 @@ void tinyml_dense(const int8_t *in, const int8_t *weights, const int32_t *biases
         }
       }
 
-      b_buf[0] = (i == 0) ? out_acc[0] : 0;
-      b_buf[1] = (i == 0) ? out_acc[1] : 0;
-      b_buf[2] = (i == 0) ? out_acc[2] : 0;
-      b_buf[3] = (i == 0) ? out_acc[3] : 0;
+      b_buf[0] = out_acc[0];
+      b_buf[1] = out_acc[1];
+      b_buf[2] = out_acc[2];
+      b_buf[3] = out_acc[3];
 
       int32_t temp_res[4];
       tinyml_dense_4x4(in_buf, w_buf, b_buf, temp_res, (i + 4 >= in_dim) ? shift : 0, (i + 4 >= in_dim) ? relu : 0);

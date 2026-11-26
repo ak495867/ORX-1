@@ -36,16 +36,14 @@ module tb_riscv_compliance;
   assign rsp_err = 1'b0;
 
   assign imem_rdata = ram[imem_addr[13:2]];
+  assign rsp_rdata = ram[req_addr[13:2]];
 
   always_ff @(posedge clk) begin
-    if (req_valid && req_ready) begin
-      if (req_write) begin
-        if (req_wstrb[0]) ram[req_addr[13:2]][7:0] <= req_wdata[7:0];
-        if (req_wstrb[1]) ram[req_addr[13:2]][15:8] <= req_wdata[15:8];
-        if (req_wstrb[2]) ram[req_addr[13:2]][23:16] <= req_wdata[23:16];
-        if (req_wstrb[3]) ram[req_addr[13:2]][31:24] <= req_wdata[31:24];
-      end
-      rsp_rdata <= ram[req_addr[13:2]];
+    if (req_valid && req_ready && req_write) begin
+      if (req_wstrb[0]) ram[req_addr[13:2]][7:0] <= req_wdata[7:0];
+      if (req_wstrb[1]) ram[req_addr[13:2]][15:8] <= req_wdata[15:8];
+      if (req_wstrb[2]) ram[req_addr[13:2]][23:16] <= req_wdata[23:16];
+      if (req_wstrb[3]) ram[req_addr[13:2]][31:24] <= req_wdata[31:24];
     end
   end
 
@@ -78,10 +76,10 @@ module tb_riscv_compliance;
   initial begin
     integer fd;
     for (int i = 0; i < 4096; i = i + 1) ram[i] = 32'h0000_0013;
-    ram[0] = 32'h00100093;
-    ram[1] = 32'h10001137;
-    ram[2] = 32'h00112023;
-    ram[3] = 32'h0000006f;
+    ram[0] = 32'h0010_0093;
+    ram[1] = 32'h0001_1137;
+    ram[2] = 32'h0011_2023;
+    ram[3] = 32'h0000_006f;
     if ($value$plusargs("HEX=%s", test_hex_file)) begin
       $readmemh(test_hex_file, ram);
     end
@@ -91,7 +89,7 @@ module tb_riscv_compliance;
     while (cycles < 5000 && !trap && !test_done) begin
       @(posedge clk);
       cycles = cycles + 1;
-      if (req_valid && req_write && req_addr == 32'h1000_1000) begin
+      if (req_valid && req_write && req_addr == 32'h0001_1000) begin
         test_done = 1;
         if (req_wdata == 32'd1) begin
           test_passed = 1;
@@ -111,10 +109,10 @@ module tb_riscv_compliance;
       end
     end
 
-    if (test_passed || (!trap && cycles < 5000)) begin
+    if (test_passed) begin
       $display("RISCV_COMPLIANCE_PASS cycles=%0d", cycles);
     end else begin
-      $display("RISCV_COMPLIANCE_DONE cycles=%0d trap=%0d", cycles, trap);
+      $display("RISCV_COMPLIANCE_FAIL cycles=%0d trap=%0d done=%0d", cycles, trap, test_done);
     end
     $finish;
   end

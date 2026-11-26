@@ -22,14 +22,25 @@ module wb_interconnect (
   output logic [31:0] m1_dat_o,
   output logic m1_err_o,
 
-  output logic [8:0] s_cyc_o,
-  output logic [8:0] s_stb_o,
+  input logic m2_cyc_i,
+  input logic m2_stb_i,
+  input logic m2_we_i,
+  input logic [31:0] m2_adr_i,
+  input logic [31:0] m2_dat_i,
+  input logic [3:0] m2_sel_i,
+  output logic m2_ack_o,
+  output logic [31:0] m2_dat_o,
+  output logic m2_err_o,
+
+  output logic [1:0] grant_master_o,
+  output logic [9:0] s_cyc_o,
+  output logic [9:0] s_stb_o,
   output logic s_we_o,
   output logic [31:0] s_adr_o,
   output logic [31:0] s_dat_o,
   output logic [3:0] s_sel_o,
 
-  input logic [8:0] s_ack_i,
+  input logic [9:0] s_ack_i,
   input logic [31:0] s0_dat_i,
   input logic [31:0] s1_dat_i,
   input logic [31:0] s2_dat_i,
@@ -39,13 +50,41 @@ module wb_interconnect (
   input logic [31:0] s6_dat_i,
   input logic [31:0] s7_dat_i,
   input logic [31:0] s8_dat_i,
-  input logic [8:0] s_err_i
+  input logic [31:0] s9_dat_i,
+  input logic [9:0] s_err_i
 );
-  logic master_grant;
+  logic [2:0] m_req;
+  logic [1:0] grant_id;
+  logic [1:0] locked_id;
+  logic locked;
+  logic [1:0] last_grant;
+
+  assign m_req = {m2_cyc_i && m2_stb_i, m1_cyc_i && m1_stb_i, m0_cyc_i && m0_stb_i};
+  assign grant_master_o = grant_id;
 
   always_comb begin
-    if (m1_cyc_i && m1_stb_i) master_grant = 1'b1;
-    else master_grant = 1'b0;
+    grant_id = 2'd0;
+    if (locked && m_req[locked_id]) begin
+      grant_id = locked_id;
+    end else begin
+      case (last_grant)
+        2'd0: begin
+          if (m_req[1]) grant_id = 2'd1;
+          else if (m_req[2]) grant_id = 2'd2;
+          else grant_id = 2'd0;
+        end
+        2'd1: begin
+          if (m_req[2]) grant_id = 2'd2;
+          else if (m_req[0]) grant_id = 2'd0;
+          else grant_id = 2'd1;
+        end
+        default: begin
+          if (m_req[0]) grant_id = 2'd0;
+          else if (m_req[1]) grant_id = 2'd1;
+          else grant_id = 2'd2;
+        end
+      endcase
+    end
   end
 
   logic [31:0] g_adr;
@@ -55,17 +94,39 @@ module wb_interconnect (
   logic g_cyc;
   logic g_stb;
 
-  assign g_cyc = master_grant ? m1_cyc_i : m0_cyc_i;
-  assign g_stb = master_grant ? m1_stb_i : m0_stb_i;
-  assign g_we  = master_grant ? m1_we_i  : m0_we_i;
-  assign g_adr = master_grant ? m1_adr_i : m0_adr_i;
-  assign g_dat = master_grant ? m1_dat_i : m0_dat_i;
-  assign g_sel = master_grant ? m1_sel_i : m0_sel_i;
+  always_comb begin
+    case (grant_id)
+      2'd1: begin
+        g_cyc = m1_cyc_i;
+        g_stb = m1_stb_i;
+        g_we  = m1_we_i;
+        g_adr = m1_adr_i;
+        g_dat = m1_dat_i;
+        g_sel = m1_sel_i;
+      end
+      2'd2: begin
+        g_cyc = m2_cyc_i;
+        g_stb = m2_stb_i;
+        g_we  = m2_we_i;
+        g_adr = m2_adr_i;
+        g_dat = m2_dat_i;
+        g_sel = m2_sel_i;
+      end
+      default: begin
+        g_cyc = m0_cyc_i;
+        g_stb = m0_stb_i;
+        g_we  = m0_we_i;
+        g_adr = m0_adr_i;
+        g_dat = m0_dat_i;
+        g_sel = m0_sel_i;
+      end
+    endcase
+  end
 
-  logic [8:0] slave_sel;
+  logic [9:0] slave_sel;
 
   always_comb begin
-    slave_sel = 9'b0;
+    slave_sel = 10'b0;
     if (g_cyc && g_stb) begin
       if (g_adr >= `ORX1_BOOT_BASE && g_adr <= `ORX1_BOOT_LAST) slave_sel[0] = 1'b1;
       else if (g_adr >= `ORX1_SRAM_BASE && g_adr <= `ORX1_SRAM_LAST) slave_sel[1] = 1'b1;
@@ -76,6 +137,7 @@ module wb_interconnect (
       else if (g_adr >= `ORX1_ENERGY_BASE && g_adr < `ORX1_ENERGY_BASE + `ORX1_REGION_SIZE) slave_sel[6] = 1'b1;
       else if (g_adr >= `ORX1_TIMER_BASE && g_adr < `ORX1_TIMER_BASE + `ORX1_REGION_SIZE) slave_sel[7] = 1'b1;
       else if (g_adr >= `ORX1_DMA_BASE && g_adr < `ORX1_DMA_BASE + `ORX1_REGION_SIZE) slave_sel[8] = 1'b1;
+      else if (g_adr >= `ORX1_CORDIC_BASE && g_adr < `ORX1_CORDIC_BASE + `ORX1_REGION_SIZE) slave_sel[9] = 1'b1;
     end
   end
 
@@ -83,15 +145,15 @@ module wb_interconnect (
   assign s_dat_o = g_dat;
   assign s_sel_o = g_sel;
   assign s_we_o  = g_we;
-  assign s_cyc_o = slave_sel & {9{g_cyc}};
-  assign s_stb_o = slave_sel & {9{g_stb}};
+  assign s_cyc_o = slave_sel & {10{g_cyc}};
+  assign s_stb_o = slave_sel & {10{g_stb}};
 
   logic [31:0] selected_rdata;
   logic selected_ack;
   logic selected_err;
   logic unmapped_err;
 
-  assign unmapped_err = g_cyc && g_stb && (slave_sel == 9'b0);
+  assign unmapped_err = g_cyc && g_stb && (slave_sel == 10'b0);
 
   always_comb begin
     selected_rdata = 32'd0;
@@ -107,14 +169,36 @@ module wb_interconnect (
       slave_sel[6]: begin selected_rdata = s6_dat_i; selected_ack = s_ack_i[6]; selected_err = s_err_i[6]; end
       slave_sel[7]: begin selected_rdata = s7_dat_i; selected_ack = s_ack_i[7]; selected_err = s_err_i[7]; end
       slave_sel[8]: begin selected_rdata = s8_dat_i; selected_ack = s_ack_i[8]; selected_err = s_err_i[8]; end
+      slave_sel[9]: begin selected_rdata = s9_dat_i; selected_ack = s_ack_i[9]; selected_err = s_err_i[9]; end
       default: begin selected_rdata = 32'd0; selected_ack = 1'b0; selected_err = unmapped_err; end
     endcase
   end
 
   assign m0_dat_o = selected_rdata;
   assign m1_dat_o = selected_rdata;
-  assign m0_ack_o = !master_grant ? selected_ack : 1'b0;
-  assign m1_ack_o = master_grant  ? selected_ack : 1'b0;
-  assign m0_err_o = !master_grant ? selected_err : 1'b0;
-  assign m1_err_o = master_grant  ? selected_err : 1'b0;
+  assign m2_dat_o = selected_rdata;
+  assign m0_ack_o = (grant_id == 2'd0) ? selected_ack : 1'b0;
+  assign m1_ack_o = (grant_id == 2'd1) ? selected_ack : 1'b0;
+  assign m2_ack_o = (grant_id == 2'd2) ? selected_ack : 1'b0;
+  assign m0_err_o = (grant_id == 2'd0) ? selected_err : 1'b0;
+  assign m1_err_o = (grant_id == 2'd1) ? selected_err : 1'b0;
+  assign m2_err_o = (grant_id == 2'd2) ? selected_err : 1'b0;
+
+  always_ff @(posedge clk or posedge reset) begin
+    if (reset) begin
+      locked <= 1'b0;
+      locked_id <= 2'd0;
+      last_grant <= 2'd2;
+    end else begin
+      if (g_cyc && g_stb && (selected_ack || selected_err)) begin
+        locked <= 1'b0;
+        last_grant <= grant_id;
+      end else if (|m_req && !locked) begin
+        locked <= 1'b1;
+        locked_id <= grant_id;
+      end else if (locked && !m_req[locked_id]) begin
+        locked <= 1'b0;
+      end
+    end
+  end
 endmodule

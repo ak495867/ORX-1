@@ -1,16 +1,21 @@
-module cpu_bus_formal;
-  logic clk;
-  logic reset;
+module cpu_bus_formal (
+  input logic clk,
+  input logic reset,
+  input logic [31:0] imem_rdata,
+  input logic req_ready,
+  input logic rsp_valid_in,
+  input logic [31:0] rsp_rdata,
+  input logic rsp_err_in,
+  input logic irq_external,
+  input logic irq_timer
+);
   logic [31:0] imem_addr;
-  logic [31:0] imem_rdata;
   logic req_valid;
-  logic req_ready;
   logic req_write;
   logic [31:0] req_addr;
   logic [31:0] req_wdata;
   logic [3:0] req_wstrb;
   logic rsp_valid;
-  logic [31:0] rsp_rdata;
   logic rsp_err;
   logic trap;
   logic [31:0] perf_cycles;
@@ -21,18 +26,10 @@ module cpu_bus_formal;
   logic [31:0] perf_bus_requests;
   logic [31:0] perf_wait_cycles;
   logic past_valid;
+  logic wait_pending;
 
-  always #1 clk = ~clk;
-  always_comb begin
-    case (imem_addr[3:2])
-      2'b00: imem_rdata = 32'h0050_2023;
-      2'b01: imem_rdata = 32'h0000_2083;
-      default: imem_rdata = 32'h0000_0013;
-    endcase
-    rsp_valid = req_valid && req_ready;
-    rsp_rdata = 32'd0;
-    rsp_err = 1'b0;
-  end
+  assign rsp_valid = rsp_valid_in && ((req_valid && req_ready) || wait_pending);
+  assign rsp_err = rsp_err_in && rsp_valid;
 
   rv32i_core dut (
     .clk(clk), .reset(reset), .imem_addr(imem_addr), .imem_rdata(imem_rdata),
@@ -42,26 +39,42 @@ module cpu_bus_formal;
     .perf_cycles(perf_cycles), .perf_instructions(perf_instructions),
     .perf_loads(perf_loads), .perf_stores(perf_stores), .perf_branches(perf_branches),
     .perf_bus_requests(perf_bus_requests), .perf_wait_cycles(perf_wait_cycles),
-    .irq_external(1'b0), .irq_timer(1'b0)
+    .irq_external(irq_external), .irq_timer(irq_timer)
   );
 
   initial begin
-    clk = 1'b0;
-    reset = 1'b1;
     past_valid = 1'b0;
+    wait_pending = 1'b0;
   end
 
   always @(posedge clk) begin
     past_valid <= 1'b1;
-    if (past_valid && !reset) begin
-      assert (!rsp_valid || req_valid);
+    if (!past_valid) begin
+      assume (reset);
+    end
+    if (reset) begin
+      wait_pending <= 1'b0;
+    end else begin
+      if (req_valid && req_ready && !rsp_valid) begin
+        wait_pending <= 1'b1;
+      end else if (rsp_valid) begin
+        wait_pending <= 1'b0;
+      end
+    end
+
+    if (past_valid && !reset && $past(!reset)) begin
+      assert (!rsp_valid || (req_valid && req_ready) || wait_pending);
       if ($past(req_valid && !req_ready)) begin
         assert (req_valid);
         assert ($stable({req_write, req_addr, req_wdata, req_wstrb}));
       end
+      if ($past(trap)) begin
+        assert (trap);
+      end
       assert (perf_cycles >= $past(perf_cycles));
       assert (perf_instructions >= $past(perf_instructions));
       assert (perf_bus_requests >= $past(perf_bus_requests));
+      assert (perf_wait_cycles >= $past(perf_wait_cycles));
     end
   end
 endmodule

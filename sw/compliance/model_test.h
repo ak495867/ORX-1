@@ -16,11 +16,11 @@
   .section .text.init; \
   .globl _start; \
   _start: \
-    la sp, 0x10000ff0; \
+    la sp, 0x00010ff0; \
     j test_entry;
 
 #define RVMODEL_HALT \
-  la t0, 0x10001000; \
+  la t0, 0x00011000; \
   li t1, 1; \
   sw t1, 0(t0); \
   1: j 1b;

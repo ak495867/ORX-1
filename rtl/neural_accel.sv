@@ -13,6 +13,7 @@ module neural_accel (
   logic signed [7:0] activation [0:3];
   logic signed [7:0] weight [0:3][0:3];
   logic signed [7:0] shadow_weight [0:3][0:3];
+  logic signed [7:0] active_weight [0:3][0:3];
   logic signed [31:0] result [0:3];
   logic signed [31:0] bias [0:3];
   logic [4:0] shift_amt;
@@ -24,6 +25,7 @@ module neural_accel (
   logic busy;
   logic done;
   integer r, c;
+  integer rc, cc;
 
   function automatic logic signed [31:0] compute_mac_row(
     input logic signed [7:0] a0, input logic signed [7:0] a1,
@@ -75,6 +77,16 @@ module neural_accel (
   endfunction
 
   always_comb begin
+    for (rc = 0; rc < 4; rc = rc + 1) begin
+      for (cc = 0; cc < 4; cc = cc + 1) begin
+        if (csr_valid && csr_write && csr_addr == 8'h00 && csr_wdata[6]) begin
+          active_weight[rc][cc] = shadow_weight[rc][cc];
+        end else begin
+          active_weight[rc][cc] = weight[rc][cc];
+        end
+      end
+    end
+
     csr_rdata = 32'd0;
     case (csr_addr)
       8'h00: csr_rdata = {25'd0, cfg_sparse, cfg_matrix, cfg_bias, cfg_relu, cfg_accum, done, busy};
@@ -97,6 +109,13 @@ module neural_accel (
       8'h44: csr_rdata = result[1];
       8'h48: csr_rdata = result[2];
       8'h4c: csr_rdata = result[3];
+      8'h50: csr_rdata = {shadow_weight[0][3], shadow_weight[0][2], shadow_weight[0][1], shadow_weight[0][0]};
+      8'h54: csr_rdata = {shadow_weight[1][3], shadow_weight[1][2], shadow_weight[1][1], shadow_weight[1][0]};
+      8'h58: csr_rdata = {shadow_weight[2][3], shadow_weight[2][2], shadow_weight[2][1], shadow_weight[2][0]};
+      8'h5c: csr_rdata = {shadow_weight[3][3], shadow_weight[3][2], shadow_weight[3][1], shadow_weight[3][0]};
+      8'h60: csr_rdata = bias[1];
+      8'h64: csr_rdata = bias[2];
+      8'h68: csr_rdata = bias[3];
       default: csr_rdata = 32'd0;
     endcase
   end
@@ -143,26 +162,26 @@ module neural_accel (
             if (csr_wdata[0] && !busy) begin
               result[0] <= compute_mac_row(
                 activation[0], activation[1], activation[2], activation[3],
-                weight[0][0], weight[0][1], weight[0][2], weight[0][3],
+                active_weight[0][0], active_weight[0][1], active_weight[0][2], active_weight[0][3],
                 result[0], bias[0], shift_amt,
                 csr_wdata[2], csr_wdata[3], csr_wdata[4], csr_wdata[7]
               );
               if (csr_wdata[5]) begin
                 result[1] <= compute_mac_row(
                   activation[0], activation[1], activation[2], activation[3],
-                  weight[1][0], weight[1][1], weight[1][2], weight[1][3],
+                  active_weight[1][0], active_weight[1][1], active_weight[1][2], active_weight[1][3],
                   result[1], bias[1], shift_amt,
                   csr_wdata[2], csr_wdata[3], csr_wdata[4], csr_wdata[7]
                 );
                 result[2] <= compute_mac_row(
                   activation[0], activation[1], activation[2], activation[3],
-                  weight[2][0], weight[2][1], weight[2][2], weight[2][3],
+                  active_weight[2][0], active_weight[2][1], active_weight[2][2], active_weight[2][3],
                   result[2], bias[2], shift_amt,
                   csr_wdata[2], csr_wdata[3], csr_wdata[4], csr_wdata[7]
                 );
                 result[3] <= compute_mac_row(
                   activation[0], activation[1], activation[2], activation[3],
-                  weight[3][0], weight[3][1], weight[3][2], weight[3][3],
+                  active_weight[3][0], active_weight[3][1], active_weight[3][2], active_weight[3][3],
                   result[3], bias[3], shift_amt,
                   csr_wdata[2], csr_wdata[3], csr_wdata[4], csr_wdata[7]
                 );
@@ -216,6 +235,27 @@ module neural_accel (
             shadow_weight[0][2] <= csr_wdata[23:16];
             shadow_weight[0][3] <= csr_wdata[31:24];
           end
+          8'h54: begin
+            shadow_weight[1][0] <= csr_wdata[7:0];
+            shadow_weight[1][1] <= csr_wdata[15:8];
+            shadow_weight[1][2] <= csr_wdata[23:16];
+            shadow_weight[1][3] <= csr_wdata[31:24];
+          end
+          8'h58: begin
+            shadow_weight[2][0] <= csr_wdata[7:0];
+            shadow_weight[2][1] <= csr_wdata[15:8];
+            shadow_weight[2][2] <= csr_wdata[23:16];
+            shadow_weight[2][3] <= csr_wdata[31:24];
+          end
+          8'h5c: begin
+            shadow_weight[3][0] <= csr_wdata[7:0];
+            shadow_weight[3][1] <= csr_wdata[15:8];
+            shadow_weight[3][2] <= csr_wdata[23:16];
+            shadow_weight[3][3] <= csr_wdata[31:24];
+          end
+          8'h60: bias[1] <= csr_wdata;
+          8'h64: bias[2] <= csr_wdata;
+          8'h68: bias[3] <= csr_wdata;
           default: begin end
         endcase
       end else if (auto_infer_trigger && !busy) begin

@@ -22,6 +22,7 @@ module caravel_user_project_wrapper (
 );
   logic clk;
   logic reset;
+  logic soc_reset;
   logic sensor_valid;
   logic [15:0] sensor_data;
   logic sensor_result_valid;
@@ -36,6 +37,7 @@ module caravel_user_project_wrapper (
 
   assign clk = wb_clk_i;
   assign reset = wb_rst_i;
+  assign soc_reset = reset | (!la_oenb[0] & la_data_in[0]);
 
   assign uart_rx = io_in[0];
   assign io_out[0] = 1'b0;
@@ -77,12 +79,9 @@ module caravel_user_project_wrapper (
   assign la_data_out[21:6] = sensor_result;
   assign la_data_out[127:22] = 106'd0;
 
-  assign wbs_ack_o = 1'b0;
-  assign wbs_dat_o = 32'd0;
-
   orx1_soc u_soc (
     .clk(clk),
-    .reset(reset),
+    .reset(soc_reset),
     .sensor_valid(sensor_valid),
     .sensor_data(sensor_data),
     .sensor_result_valid(sensor_result_valid),
@@ -93,6 +92,14 @@ module caravel_user_project_wrapper (
     .core_trap(core_trap),
     .sensor_alert(sensor_alert),
     .uart_rx(uart_rx),
-    .uart_tx(uart_tx)
+    .uart_tx(uart_tx),
+    .wb_host_cyc_i(wbs_cyc_i),
+    .wb_host_stb_i(wbs_stb_i),
+    .wb_host_we_i(wbs_we_i),
+    .wb_host_sel_i(wbs_sel_i),
+    .wb_host_adr_i(wbs_adr_i),
+    .wb_host_dat_i(wbs_dat_i),
+    .wb_host_ack_o(wbs_ack_o),
+    .wb_host_dat_o(wbs_dat_o)
   );
 endmodule

@@ -6,6 +6,10 @@ module tb_orx1;
   logic [15:0] sample_data;
   logic sensor_enable;
   logic sensor_clear;
+  logic [1:0] sensor_depth;
+  logic sensor_thresh_en;
+  logic [15:0] sensor_thresh_low;
+  logic [15:0] sensor_thresh_high;
   logic sensor_result_valid;
   logic [15:0] sensor_result;
   logic sensor_irq;
@@ -26,10 +30,10 @@ module tb_orx1;
     .sample_data(sample_data),
     .cfg_enable(sensor_enable),
     .cfg_clear(sensor_clear),
-    .cfg_depth(2'b10),
-    .cfg_thresh_en(1'b0),
-    .cfg_thresh_low(16'd0),
-    .cfg_thresh_high(16'hffff),
+    .cfg_depth(sensor_depth),
+    .cfg_thresh_en(sensor_thresh_en),
+    .cfg_thresh_low(sensor_thresh_low),
+    .cfg_thresh_high(sensor_thresh_high),
     .result_valid(sensor_result_valid),
     .result_data(sensor_result),
     .alert(sensor_alert),
@@ -74,6 +78,20 @@ module tb_orx1;
     end
   endtask
 
+  task automatic read_accel(input logic [7:0] address, output logic [31:0] value);
+    begin
+      @(negedge clk);
+      accel_addr = address;
+      accel_valid = 1'b1;
+      accel_write = 1'b0;
+      #1;
+      value = accel_rdata;
+      accel_valid = 1'b0;
+    end
+  endtask
+
+  logic [31:0] rd_val;
+
   initial begin
     clk = 1'b0;
     reset = 1'b1;
@@ -81,6 +99,10 @@ module tb_orx1;
     sample_data = 16'd0;
     sensor_enable = 1'b0;
     sensor_clear = 1'b0;
+    sensor_depth = 2'b10;
+    sensor_thresh_en = 1'b0;
+    sensor_thresh_low = 16'd0;
+    sensor_thresh_high = 16'hffff;
     accel_valid = 1'b0;
     accel_write = 1'b0;
     accel_addr = 8'd0;
@@ -96,6 +118,20 @@ module tb_orx1;
     #1;
     if (!sensor_result_valid || sensor_result != 16'd4) failures = failures + 1;
 
+    @(negedge clk);
+    sensor_clear = 1'b1;
+    @(negedge clk);
+    sensor_clear = 1'b0;
+    sensor_depth = 2'b11;
+    sensor_thresh_en = 1'b1;
+    sensor_thresh_low = 16'd0;
+    sensor_thresh_high = 16'd5;
+    push_sample(16'd10);
+    push_sample(16'd20);
+    push_sample(16'd45);
+    #1;
+    if (!sensor_result_valid || sensor_result != 16'd15 || !sensor_alert) failures = failures + 1;
+
     write_accel(8'h10, 32'd2);
     write_accel(8'h14, 32'd3);
     write_accel(8'h18, 32'd4);
@@ -108,13 +144,8 @@ module tb_orx1;
     @(posedge clk);
     #1;
     if (!accel_irq) failures = failures + 1;
-    @(negedge clk);
-    accel_addr = 8'h04;
-    accel_valid = 1'b1;
-    accel_write = 1'b0;
-    #1;
-    if (accel_rdata != 32'd110) failures = failures + 1;
-    accel_valid = 1'b0;
+    read_accel(8'h04, rd_val);
+    if (rd_val != 32'd110) failures = failures + 1;
 
     write_accel(8'h30, 32'h0504_0302);
     write_accel(8'h34, 32'h0908_0706);
@@ -123,13 +154,8 @@ module tb_orx1;
     @(posedge clk);
     #1;
     if (!accel_irq) failures = failures + 1;
-    @(negedge clk);
-    accel_addr = 8'h04;
-    accel_valid = 1'b1;
-    accel_write = 1'b0;
-    #1;
-    if (accel_rdata != 32'd120) failures = failures + 1;
-    accel_valid = 1'b0;
+    read_accel(8'h04, rd_val);
+    if (rd_val != 32'd120) failures = failures + 1;
 
     write_accel(8'h30, 32'h0504_0302);
     write_accel(8'h34, 32'h0001_0a05);
@@ -139,13 +165,43 @@ module tb_orx1;
     @(posedge clk);
     #1;
     if (!accel_irq) failures = failures + 1;
-    @(negedge clk);
-    accel_addr = 8'h04;
-    accel_valid = 1'b1;
-    accel_write = 1'b0;
+    read_accel(8'h04, rd_val);
+    if (rd_val != 32'd35) failures = failures + 1;
+
+    write_accel(8'h30, 32'h0101_0101);
+    write_accel(8'h34, 32'h0101_0101);
+    write_accel(8'h38, 32'hffff_ffff);
+    write_accel(8'h3c, 32'h0202_0202);
+    write_accel(8'h40, 32'h0303_0303);
+    write_accel(8'h08, 32'd4);
+    write_accel(8'h60, 32'd1);
+    write_accel(8'h64, 32'd8);
+    write_accel(8'h68, 32'd4);
+    write_accel(8'h0c, 32'd1);
+    write_accel(8'h00, 32'h39);
+    @(posedge clk);
     #1;
-    if (accel_rdata != 32'd35) failures = failures + 1;
-    accel_valid = 1'b0;
+    if (!accel_irq) failures = failures + 1;
+    read_accel(8'h04, rd_val);
+    if (rd_val != 32'd4) failures = failures + 1;
+    read_accel(8'h44, rd_val);
+    if (rd_val != 32'd0) failures = failures + 1;
+    read_accel(8'h48, rd_val);
+    if (rd_val != 32'd8) failures = failures + 1;
+    read_accel(8'h4c, rd_val);
+    if (rd_val != 32'd8) failures = failures + 1;
+
+    write_accel(8'h50, 32'h0202_0202);
+    write_accel(8'h54, 32'h0101_0101);
+    write_accel(8'h0c, 32'd0);
+    write_accel(8'h00, 32'h61);
+    @(posedge clk);
+    #1;
+    if (!accel_irq) failures = failures + 1;
+    read_accel(8'h04, rd_val);
+    if (rd_val != 32'd8) failures = failures + 1;
+    read_accel(8'h44, rd_val);
+    if (rd_val != 32'd4) failures = failures + 1;
 
     if (failures == 0) $display("ORX1_TEST_PASS");
     else $display("ORX1_TEST_FAIL %0d", failures);

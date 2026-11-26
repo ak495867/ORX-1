@@ -42,6 +42,10 @@ module cordic_engine (
   endfunction
 
   assign cordic_irq = done;
+  assign x_shift = x_reg >>> step_cnt;
+  assign y_shift = y_reg >>> step_cnt;
+  assign angle_lut = get_atan_lut(step_cnt);
+  assign d_dir = mode_rot ? (z_reg >= 32'sd0) : (y_reg < 32'sd0);
 
   always_comb begin
     csr_rdata = 32'd0;
@@ -82,16 +86,6 @@ module cordic_engine (
           default: begin end
         endcase
       end else if (busy) begin
-        x_shift = x_reg >>> step_cnt;
-        y_shift = y_reg >>> step_cnt;
-        angle_lut = get_atan_lut(step_cnt);
-
-        if (mode_rot) begin
-          d_dir = (z_reg >= 32'sd0) ? 1'b1 : 1'b0;
-        end else begin
-          d_dir = (y_reg < 32'sd0) ? 1'b1 : 1'b0;
-        end
-
         if (d_dir) begin
           x_reg <= x_reg - y_shift;
           y_reg <= y_reg + x_shift;
