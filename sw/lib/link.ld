@@ -3,7 +3,7 @@ ENTRY(_start)
 
 MEMORY {
   ROM (rx)  : ORIGIN = 0x00000000, LENGTH = 1K
-  RAM (rwx) : ORIGIN = 0x00010000, LENGTH = 4K
+  RAM (rwx) : ORIGIN = 0x00010000, LENGTH = 8K
 }
 
 SECTIONS {
@@ -26,5 +26,5 @@ SECTIONS {
   } > RAM
 
   _end = .;
-  PROVIDE(__stack_top = 0x00011000);
+  PROVIDE(__stack_top = 0x00012000);
 }

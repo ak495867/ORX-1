@@ -1,0 +1,16 @@
+[options]
+mode prove
+depth 10
+multiclock off
+
+[engines]
+smtbmc z3
+
+[script]
+read_verilog -formal -sv orx1_pkg.sv wb_interconnect.sv wb_xbar_formal.sv
+prep -top wb_xbar_formal
+
+[files]
+rtl/orx1_pkg.sv
+rtl/wb_interconnect.sv
+formal/wb_xbar_formal.sv

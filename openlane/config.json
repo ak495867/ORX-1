@@ -15,6 +15,9 @@
     "dir::../rtl/wb_interconnect.sv",
     "dir::../rtl/cordic_engine.sv",
     "dir::../rtl/irq_ctrl.sv",
+    "dir::../rtl/gpio_ctrl.sv",
+    "dir::../rtl/spi_master.sv",
+    "dir::../rtl/sys_ctrl.sv",
     "dir::../rtl/orx1_soc.sv"
   ],
   "CLOCK_PORT": "clk",

@@ -47,7 +47,11 @@ static int32_t mac_row_hw(uint32_t act_p, uint32_t w_p, int32_t prev, int32_t bi
 
   a_sum = ((ctrl & 0x04) ? prev : 0) + p_sum + ((ctrl & 0x10) ? bias : 0);
   s_sum = a_sum >> shift;
-  if ((ctrl & 0x08) && s_sum < 0) return 0;
+  if ((ctrl & 0x08) && s_sum < 0) s_sum = 0;
+  if (ctrl & 0x100u) {
+    if (s_sum > 127) s_sum = 127;
+    if (s_sum < -128) s_sum = -128;
+  }
   return s_sum;
 }
 

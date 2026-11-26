@@ -10,8 +10,11 @@ module tb_interrupts;
   logic boot_release;
   logic boot_fail;
   logic core_trap;
+  logic core_sleep;
   logic sensor_alert;
   logic uart_loopback;
+  logic [15:0] gpio_out, gpio_oe;
+  logic spi_sck, spi_mosi, spi_cs_n;
   logic wb_host_ack_o;
   logic [31:0] wb_host_dat_o;
   integer failures = 0;
@@ -23,7 +26,10 @@ module tb_interrupts;
     .clk(clk), .reset(reset), .sensor_valid(sensor_valid), .sensor_data(sensor_data),
     .sensor_result_valid(sensor_result_valid), .sensor_result(sensor_result),
     .accelerator_irq(accelerator_irq), .boot_release(boot_release), .boot_fail(boot_fail),
-    .core_trap(core_trap), .sensor_alert(sensor_alert), .uart_rx(uart_loopback), .uart_tx(uart_loopback),
+    .core_trap(core_trap), .core_sleep(core_sleep), .sensor_alert(sensor_alert),
+    .uart_rx(uart_loopback), .uart_tx(uart_loopback),
+    .gpio_in(16'd0), .gpio_out(gpio_out), .gpio_oe(gpio_oe),
+    .spi_sck(spi_sck), .spi_mosi(spi_mosi), .spi_miso(1'b0), .spi_cs_n(spi_cs_n),
     .wb_host_cyc_i(1'b0), .wb_host_stb_i(1'b0), .wb_host_we_i(1'b0),
     .wb_host_sel_i(4'b0000), .wb_host_adr_i(32'd0), .wb_host_dat_i(32'd0),
     .wb_host_ack_o(wb_host_ack_o), .wb_host_dat_o(wb_host_dat_o)

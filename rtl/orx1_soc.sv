@@ -11,9 +11,17 @@ module orx1_soc #(
   output logic boot_release,
   output logic boot_fail,
   output logic core_trap,
+  output logic core_sleep,
   output logic sensor_alert,
   input logic uart_rx,
   output logic uart_tx,
+  input logic [15:0] gpio_in,
+  output logic [15:0] gpio_out,
+  output logic [15:0] gpio_oe,
+  output logic spi_sck,
+  output logic spi_mosi,
+  input logic spi_miso,
+  output logic spi_cs_n,
   input logic wb_host_cyc_i,
   input logic wb_host_stb_i,
   input logic wb_host_we_i,
@@ -43,14 +51,14 @@ module orx1_soc #(
   logic wb_host_err;
 
   logic [1:0] grant_master;
-  logic [10:0] wb_s_cyc;
-  logic [10:0] wb_s_stb;
+  logic [13:0] wb_s_cyc;
+  logic [13:0] wb_s_stb;
   logic wb_s_we;
   logic [31:0] wb_s_adr;
   logic [31:0] wb_s_dat;
   logic [3:0] wb_s_sel;
-  logic [10:0] wb_s_ack;
-  logic [10:0] wb_s_err;
+  logic [13:0] wb_s_ack;
+  logic [13:0] wb_s_err;
 
   logic [31:0] rom_rdata;
   logic [31:0] sram_rdata;
@@ -64,6 +72,9 @@ module orx1_soc #(
   logic [31:0] dma_csr_rdata;
   logic [31:0] cordic_csr_rdata;
   logic [31:0] irq_csr_rdata;
+  logic [31:0] gpio_csr_rdata;
+  logic [31:0] spi_csr_rdata;
+  logic [31:0] sys_csr_rdata;
 
   logic [31:0] cpu_cycles;
   logic [31:0] cpu_instructions;
@@ -86,7 +97,7 @@ module orx1_soc #(
   logic sensor_irq;
 
   logic [31:0] boot_word;
-  logic [2:0] boot_addr;
+  logic [7:0] boot_addr;
   logic [31:0] boot_rom [0:255];
 
   logic d_valid;
@@ -98,7 +109,13 @@ module orx1_soc #(
   logic timer_irq;
   logic dma_irq;
   logic cordic_irq;
+  logic gpio_irq;
+  logic spi_irq;
   logic core_irq;
+  logic cpu_reset_req;
+  logic wdt_reset_out;
+  logic core_rst;
+  logic periph_rst;
 
   logic dma_req_valid;
   logic dma_req_ready;
@@ -120,6 +137,9 @@ module orx1_soc #(
   assign d_write = req_write;
   assign d_addr = req_addr;
 
+  assign core_rst = reset | cpu_reset_req;
+  assign periph_rst = reset | wdt_reset_out;
+
   assign req_ready = m0_ack | m0_err;
   assign rsp_valid = m0_ack | m0_err;
   assign rsp_rdata = m0_rdata;
@@ -137,8 +157,8 @@ module orx1_soc #(
   assign wb_s_err[0] = wb_s_cyc[0] && wb_s_stb[0] && wb_s_we && (grant_master != 2'd2);
   assign wb_s_ack[1] = sram_ack;
   assign wb_s_err[1] = 1'b0;
-  assign wb_s_ack[10:2] = wb_s_cyc[10:2] & wb_s_stb[10:2];
-  assign wb_s_err[10:2] = 9'd0;
+  assign wb_s_ack[13:2] = wb_s_cyc[13:2] & wb_s_stb[13:2];
+  assign wb_s_err[13:2] = 12'd0;
 
   assign sensor_bus_valid = sensor_valid | (wb_s_cyc[2] && wb_s_stb[2] && wb_s_we && wb_s_adr[7:0] == 8'h08);
   assign sensor_bus_data = sensor_valid ? sensor_data : wb_s_dat[15:0];
@@ -154,8 +174,8 @@ module orx1_soc #(
     end
   end
 
-  always_ff @(posedge clk or posedge reset) begin
-    if (reset) begin
+  always_ff @(posedge clk or posedge periph_rst) begin
+    if (periph_rst) begin
       sensor_enable <= 1'b0;
       sensor_clear <= 1'b0;
       sensor_thresh_en <= 1'b0;
@@ -199,7 +219,7 @@ module orx1_soc #(
 
   wb_interconnect u_wb_xbar (
     .clk(clk),
-    .reset(reset),
+    .reset(periph_rst),
     .m0_cyc_i(req_valid),
     .m0_stb_i(req_valid),
     .m0_we_i(req_write),
@@ -246,37 +266,41 @@ module orx1_soc #(
     .s8_dat_i(dma_csr_rdata),
     .s9_dat_i(cordic_csr_rdata),
     .s10_dat_i(irq_csr_rdata),
+    .s11_dat_i(gpio_csr_rdata),
+    .s12_dat_i(spi_csr_rdata),
+    .s13_dat_i(sys_csr_rdata),
     .s_err_i(wb_s_err)
   );
 
   sram_sp #(
-    .WORDS(1024),
-    .ADDR_WIDTH(10)
+    .WORDS(2048),
+    .ADDR_WIDTH(11)
   ) u_sram (
     .clk(clk),
-    .reset(reset),
+    .reset(periph_rst),
     .en(wb_s_cyc[1] && wb_s_stb[1]),
     .wen(wb_s_we ? wb_s_sel : 4'b0000),
-    .addr(wb_s_adr[11:2]),
+    .addr(wb_s_adr[12:2]),
     .wdata(wb_s_dat),
     .rdata(sram_rdata),
     .ack(sram_ack),
-    .imem_addr(imem_addr[11:2]),
+    .imem_addr(imem_addr[12:2]),
     .imem_rdata(sram_imem_rdata)
   );
 
   rv32i_core core (
-    .clk(clk), .reset(reset), .imem_addr(imem_addr), .imem_rdata(imem_rdata),
+    .clk(clk), .reset(core_rst), .imem_addr(imem_addr), .imem_rdata(imem_rdata),
     .req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
     .req_addr(req_addr), .req_wdata(req_wdata), .req_wstrb(req_wstrb),
     .rsp_valid(rsp_valid), .rsp_rdata(rsp_rdata), .rsp_err(rsp_err), .trap(core_trap),
+    .core_sleep(core_sleep),
     .perf_cycles(cpu_cycles), .perf_instructions(cpu_instructions), .perf_loads(cpu_loads),
     .perf_stores(cpu_stores), .perf_branches(cpu_branches), .perf_bus_requests(cpu_bus_requests),
     .perf_wait_cycles(cpu_wait_cycles), .irq_external(core_irq), .irq_timer(timer_irq)
   );
 
   sensor_pipeline sensor (
-    .clk(clk), .reset(reset), .sample_valid(sensor_bus_valid), .sample_data(sensor_bus_data),
+    .clk(clk), .reset(periph_rst), .sample_valid(sensor_bus_valid), .sample_data(sensor_bus_data),
     .cfg_enable(sensor_enable), .cfg_clear(sensor_clear),
     .cfg_depth(sensor_depth), .cfg_thresh_en(sensor_thresh_en),
     .cfg_thresh_low(sensor_thresh_low), .cfg_thresh_high(sensor_thresh_high),
@@ -285,7 +309,7 @@ module orx1_soc #(
   );
 
   neural_accel accelerator (
-    .clk(clk), .reset(reset), .csr_valid(wb_s_cyc[3] && wb_s_stb[3]), .csr_write(wb_s_we),
+    .clk(clk), .reset(periph_rst), .csr_valid(wb_s_cyc[3] && wb_s_stb[3]), .csr_write(wb_s_we),
     .csr_addr(wb_s_adr[7:0]), .csr_wdata(wb_s_dat), .csr_rdata(accel_csr_rdata),
     .irq(accelerator_irq),
     .auto_infer_trigger(auto_infer_trigger),
@@ -299,19 +323,19 @@ module orx1_soc #(
   );
 
   uart_core serial_comm (
-    .clk(clk), .reset(reset), .csr_valid(wb_s_cyc[5] && wb_s_stb[5]), .csr_write(wb_s_we),
+    .clk(clk), .reset(periph_rst), .csr_valid(wb_s_cyc[5] && wb_s_stb[5]), .csr_write(wb_s_we),
     .csr_addr(wb_s_adr[7:0]), .csr_wdata(wb_s_dat), .csr_rdata(uart_csr_rdata),
     .rx(uart_rx), .tx(uart_tx), .uart_irq(uart_irq)
   );
 
   timer_mtime sys_timer (
-    .clk(clk), .reset(reset), .csr_valid(wb_s_cyc[7] && wb_s_stb[7]), .csr_write(wb_s_we),
+    .clk(clk), .reset(periph_rst), .csr_valid(wb_s_cyc[7] && wb_s_stb[7]), .csr_write(wb_s_we),
     .csr_addr(wb_s_adr[7:0]), .csr_wdata(wb_s_dat), .csr_rdata(timer_csr_rdata),
     .timer_irq(timer_irq)
   );
 
   dma_ctrl sys_dma (
-    .clk(clk), .reset(reset), .csr_valid(wb_s_cyc[8] && wb_s_stb[8]), .csr_write(wb_s_we),
+    .clk(clk), .reset(periph_rst), .csr_valid(wb_s_cyc[8] && wb_s_stb[8]), .csr_write(wb_s_we),
     .csr_addr(wb_s_adr[7:0]), .csr_wdata(wb_s_dat), .csr_rdata(dma_csr_rdata),
     .dma_req_valid(dma_req_valid), .dma_req_ready(dma_req_ready),
     .dma_req_write(dma_req_write), .dma_req_addr(dma_req_addr),
@@ -321,10 +345,10 @@ module orx1_soc #(
   );
 
   energy_monitor activity_monitor (
-    .clk(clk), .reset(reset), .csr_valid(wb_s_cyc[6] && wb_s_stb[6]), .csr_write(wb_s_we),
+    .clk(clk), .reset(periph_rst), .csr_valid(wb_s_cyc[6] && wb_s_stb[6]), .csr_write(wb_s_we),
     .csr_addr(wb_s_adr[7:0]), .csr_wdata(wb_s_dat), .csr_rdata(energy_csr_rdata),
     .sensor_event(sensor_result_valid), .accelerator_event(accelerator_irq),
-    .memory_event(|wb_s_ack),
+    .memory_event(|wb_s_ack), .core_sleep(core_sleep),
     .cpu_cycles(cpu_cycles), .cpu_instructions(cpu_instructions), .cpu_loads(cpu_loads),
     .cpu_stores(cpu_stores), .cpu_branches(cpu_branches), .cpu_bus_requests(cpu_bus_requests),
     .cpu_wait_cycles(cpu_wait_cycles)
@@ -332,7 +356,7 @@ module orx1_soc #(
 
   cordic_engine coproc_cordic (
     .clk(clk),
-    .reset(reset),
+    .reset(periph_rst),
     .csr_valid(wb_s_cyc[9] && wb_s_stb[9]),
     .csr_write(wb_s_we),
     .csr_addr(wb_s_adr[7:0]),
@@ -343,13 +367,56 @@ module orx1_soc #(
 
   irq_ctrl u_irq_ctrl (
     .clk(clk),
-    .reset(reset),
+    .reset(periph_rst),
     .csr_valid(wb_s_cyc[10] && wb_s_stb[10]),
     .csr_write(wb_s_we),
     .csr_addr(wb_s_adr[7:0]),
     .csr_wdata(wb_s_dat),
     .csr_rdata(irq_csr_rdata),
-    .irq_sources({cordic_irq, dma_irq, uart_irq, sensor_alert, accelerator_irq, sensor_irq}),
+    .irq_sources({cordic_irq | spi_irq, dma_irq, uart_irq, sensor_alert | gpio_irq, accelerator_irq, sensor_irq}),
     .irq_out(core_irq)
+  );
+
+  gpio_ctrl u_gpio (
+    .clk(clk),
+    .reset(periph_rst),
+    .csr_valid(wb_s_cyc[11] && wb_s_stb[11]),
+    .csr_write(wb_s_we),
+    .csr_addr(wb_s_adr[7:0]),
+    .csr_wdata(wb_s_dat),
+    .csr_rdata(gpio_csr_rdata),
+    .gpio_in(gpio_in),
+    .gpio_out(gpio_out),
+    .gpio_oe(gpio_oe),
+    .gpio_irq(gpio_irq)
+  );
+
+  spi_master u_spi (
+    .clk(clk),
+    .reset(periph_rst),
+    .csr_valid(wb_s_cyc[12] && wb_s_stb[12]),
+    .csr_write(wb_s_we),
+    .csr_addr(wb_s_adr[7:0]),
+    .csr_wdata(wb_s_dat),
+    .csr_rdata(spi_csr_rdata),
+    .spi_sck(spi_sck),
+    .spi_mosi(spi_mosi),
+    .spi_miso(spi_miso),
+    .spi_cs_n(spi_cs_n),
+    .spi_irq(spi_irq)
+  );
+
+  sys_ctrl u_sys_ctrl (
+    .clk(clk),
+    .reset(reset),
+    .csr_valid(wb_s_cyc[13] && wb_s_stb[13]),
+    .csr_write(wb_s_we),
+    .csr_addr(wb_s_adr[7:0]),
+    .csr_wdata(wb_s_dat),
+    .csr_rdata(sys_csr_rdata),
+    .host_grant(grant_master == 2'd2),
+    .boot_release(boot_release),
+    .cpu_reset_req(cpu_reset_req),
+    .wdt_reset_out(wdt_reset_out)
   );
 endmodule

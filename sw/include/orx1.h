@@ -21,6 +21,9 @@ extern volatile uint32_t *orx1_host_reg(uint32_t addr);
 #define ORX1_DMA_BASE      0x40006000
 #define ORX1_CORDIC_BASE   0x40007000
 #define ORX1_IRQ_BASE      0x40008000
+#define ORX1_GPIO_BASE     0x40009000
+#define ORX1_SPI_BASE      0x4000A000
+#define ORX1_SYS_BASE      0x4000B000
 
 #define SENSOR_CTRL        REG32(ORX1_SENSOR_BASE + 0x00)
 #define SENSOR_IRQ         REG32(ORX1_SENSOR_BASE + 0x04)
@@ -60,12 +63,14 @@ extern volatile uint32_t *orx1_host_reg(uint32_t addr);
 #define ACCEL_BIAS_1       REG32(ORX1_ACCEL_BASE + 0x60)
 #define ACCEL_BIAS_2       REG32(ORX1_ACCEL_BASE + 0x64)
 #define ACCEL_BIAS_3       REG32(ORX1_ACCEL_BASE + 0x68)
+#define ACCEL_THRESH       REG32(ORX1_ACCEL_BASE + 0x6C)
 
 #define BOOT_CTRL          REG32(ORX1_BOOTCTRL_BASE + 0x00)
 #define BOOT_DIGEST        REG32(ORX1_BOOTCTRL_BASE + 0x04)
 #define BOOT_EXPECTED      REG32(ORX1_BOOTCTRL_BASE + 0x08)
 #define BOOT_EFUSE_IDX     REG32(ORX1_BOOTCTRL_BASE + 0x0C)
 #define BOOT_EFUSE_DATA    REG32(ORX1_BOOTCTRL_BASE + 0x10)
+#define BOOT_IMAGE_WORDS   REG32(ORX1_BOOTCTRL_BASE + 0x14)
 
 #define UART_DATA          REG32(ORX1_UART_BASE + 0x00)
 #define UART_STATUS        REG32(ORX1_UART_BASE + 0x04)
@@ -86,6 +91,8 @@ extern volatile uint32_t *orx1_host_reg(uint32_t addr);
 #define ENERGY_CPU_BRANCH  REG32(ORX1_ENERGY_BASE + 0x28)
 #define ENERGY_CPU_BUSREQ  REG32(ORX1_ENERGY_BASE + 0x2C)
 #define ENERGY_CPU_WAITS   REG32(ORX1_ENERGY_BASE + 0x30)
+#define ENERGY_ACTIVE      REG32(ORX1_ENERGY_BASE + 0x34)
+#define ENERGY_SLEEP       REG32(ORX1_ENERGY_BASE + 0x38)
 
 #define TIMER_MTIME_L      REG32(ORX1_TIMER_BASE + 0x00)
 #define TIMER_MTIME_H      REG32(ORX1_TIMER_BASE + 0x04)
@@ -96,6 +103,10 @@ extern volatile uint32_t *orx1_host_reg(uint32_t addr);
 #define DMA_DST            REG32(ORX1_DMA_BASE + 0x04)
 #define DMA_LEN            REG32(ORX1_DMA_BASE + 0x08)
 #define DMA_CTRL           REG32(ORX1_DMA_BASE + 0x0C)
+#define DMA_CH1_SRC        REG32(ORX1_DMA_BASE + 0x10)
+#define DMA_CH1_DST        REG32(ORX1_DMA_BASE + 0x14)
+#define DMA_CH1_LEN        REG32(ORX1_DMA_BASE + 0x18)
+#define DMA_CH1_CTRL       REG32(ORX1_DMA_BASE + 0x1C)
 
 #define CORDIC_CTRL        REG32(ORX1_CORDIC_BASE + 0x00)
 #define CORDIC_X           REG32(ORX1_CORDIC_BASE + 0x04)
@@ -106,6 +117,22 @@ extern volatile uint32_t *orx1_host_reg(uint32_t addr);
 #define IRQ_PENDING        REG32(ORX1_IRQ_BASE + 0x00)
 #define IRQ_ENABLE         REG32(ORX1_IRQ_BASE + 0x04)
 #define IRQ_STATUS         REG32(ORX1_IRQ_BASE + 0x08)
+
+#define GPIO_IN            REG32(ORX1_GPIO_BASE + 0x00)
+#define GPIO_OUT           REG32(ORX1_GPIO_BASE + 0x04)
+#define GPIO_OE            REG32(ORX1_GPIO_BASE + 0x08)
+#define GPIO_IRQ_EN        REG32(ORX1_GPIO_BASE + 0x0C)
+#define GPIO_IRQ_STATUS    REG32(ORX1_GPIO_BASE + 0x10)
+
+#define SPI_CTRL           REG32(ORX1_SPI_BASE + 0x00)
+#define SPI_TX_DATA        REG32(ORX1_SPI_BASE + 0x04)
+#define SPI_RX_DATA        REG32(ORX1_SPI_BASE + 0x08)
+#define SPI_CLK_DIV        REG32(ORX1_SPI_BASE + 0x0C)
+
+#define SYS_BOOT_CTRL      REG32(ORX1_SYS_BASE + 0x00)
+#define SYS_WDT_LOAD       REG32(ORX1_SYS_BASE + 0x04)
+#define SYS_WDT_CTRL       REG32(ORX1_SYS_BASE + 0x08)
+#define SYS_WDT_COUNT      REG32(ORX1_SYS_BASE + 0x0C)
 
 static inline int32_t cordic_vector_magnitude(int16_t x, int16_t y) {
   CORDIC_X = (int32_t)x;

@@ -14,6 +14,7 @@ module tb_riscv_compliance;
   logic [31:0] rsp_rdata;
   logic rsp_err;
   logic trap;
+  logic core_sleep;
   logic [31:0] perf_cycles;
   logic [31:0] perf_instructions;
   logic [31:0] perf_loads;
@@ -62,6 +63,7 @@ module tb_riscv_compliance;
     .rsp_rdata(rsp_rdata),
     .rsp_err(rsp_err),
     .trap(trap),
+    .core_sleep(core_sleep),
     .perf_cycles(perf_cycles),
     .perf_instructions(perf_instructions),
     .perf_loads(perf_loads),

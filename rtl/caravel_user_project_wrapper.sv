@@ -31,9 +31,17 @@ module caravel_user_project_wrapper (
   logic boot_release;
   logic boot_fail;
   logic core_trap;
+  logic core_sleep;
   logic sensor_alert;
   logic uart_rx;
   logic uart_tx;
+  logic [15:0] gpio_in;
+  logic [15:0] gpio_out;
+  logic [15:0] gpio_oe;
+  logic spi_sck;
+  logic spi_mosi;
+  logic spi_miso;
+  logic spi_cs_n;
 
   assign clk = wb_clk_i;
   assign reset = wb_rst_i;
@@ -48,7 +56,6 @@ module caravel_user_project_wrapper (
 
   assign sensor_data = io_in[17:2];
   assign sensor_valid = io_in[18];
-
   assign io_out[17:2] = 16'd0;
   assign io_oeb[17:2] = 16'hffff;
   assign io_out[18] = 1'b0;
@@ -56,15 +63,24 @@ module caravel_user_project_wrapper (
 
   assign io_out[19] = sensor_result_valid;
   assign io_oeb[19] = 1'b0;
+  assign io_out[20] = sensor_alert;
+  assign io_oeb[20] = 1'b0;
+  assign io_out[21] = boot_release;
+  assign io_oeb[21] = 1'b0;
 
-  assign io_out[35:20] = sensor_result;
-  assign io_oeb[35:20] = 16'd0;
+  assign io_out[22] = spi_sck;
+  assign io_oeb[22] = 1'b0;
+  assign io_out[23] = spi_mosi;
+  assign io_oeb[23] = 1'b0;
+  assign spi_miso = io_in[24];
+  assign io_out[24] = 1'b0;
+  assign io_oeb[24] = 1'b1;
+  assign io_out[25] = spi_cs_n;
+  assign io_oeb[25] = 1'b0;
 
-  assign io_out[36] = sensor_alert;
-  assign io_oeb[36] = 1'b0;
-
-  assign io_out[37] = boot_release;
-  assign io_oeb[37] = 1'b0;
+  assign gpio_in = {4'd0, io_in[37:26]};
+  assign io_out[37:26] = gpio_out[11:0];
+  assign io_oeb[37:26] = ~gpio_oe[11:0];
 
   assign user_irq[0] = core_trap;
   assign user_irq[1] = accelerator_irq;
@@ -77,7 +93,9 @@ module caravel_user_project_wrapper (
   assign la_data_out[4] = sensor_alert;
   assign la_data_out[5] = sensor_result_valid;
   assign la_data_out[21:6] = sensor_result;
-  assign la_data_out[127:22] = 106'd0;
+  assign la_data_out[22] = core_sleep;
+  assign la_data_out[26:23] = gpio_out[15:12];
+  assign la_data_out[127:27] = 101'd0;
 
   orx1_soc u_soc (
     .clk(clk),
@@ -90,9 +108,17 @@ module caravel_user_project_wrapper (
     .boot_release(boot_release),
     .boot_fail(boot_fail),
     .core_trap(core_trap),
+    .core_sleep(core_sleep),
     .sensor_alert(sensor_alert),
     .uart_rx(uart_rx),
     .uart_tx(uart_tx),
+    .gpio_in(gpio_in),
+    .gpio_out(gpio_out),
+    .gpio_oe(gpio_oe),
+    .spi_sck(spi_sck),
+    .spi_mosi(spi_mosi),
+    .spi_miso(spi_miso),
+    .spi_cs_n(spi_cs_n),
     .wb_host_cyc_i(wbs_cyc_i),
     .wb_host_stb_i(wbs_stb_i),
     .wb_host_we_i(wbs_we_i),

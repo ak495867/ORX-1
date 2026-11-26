@@ -15,6 +15,7 @@ module rv32i_core #(
   input logic [31:0] rsp_rdata,
   input logic rsp_err,
   output logic trap,
+  output logic core_sleep,
   output logic [31:0] perf_cycles,
   output logic [31:0] perf_instructions,
   output logic [31:0] perf_loads,
@@ -37,7 +38,7 @@ module rv32i_core #(
   localparam logic [6:0] OP_MISC_MEM = 7'b0001111;
   localparam logic [6:0] OP_SYSTEM   = 7'b1110011;
 
-  typedef enum logic [2:0] {FETCH, MEM_REQUEST, MEM_WAIT, WFI_WAIT, TRAP} state_t;
+  typedef enum logic [2:0] {FETCH, MEM_REQUEST, MEM_WAIT, WFI_WAIT, DIV_WAIT, TRAP} state_t;
   state_t state;
   logic [31:0] pc;
   logic [31:0] regs [0:31];
@@ -80,6 +81,28 @@ module rv32i_core #(
   logic irq_tim_en;
   logic irq_pending_active;
 
+  logic mul_sign_a;
+  logic mul_sign_b;
+  logic signed [32:0] mul_a;
+  logic signed [32:0] mul_b;
+  logic signed [65:0] mul_prod;
+
+  logic [5:0] div_cnt;
+  logic [31:0] div_quotient;
+  logic [31:0] div_rem;
+  logic [31:0] div_divisor;
+  logic div_neg_res;
+  logic div_is_rem;
+  logic [4:0] div_rd;
+  logic div_signed_op;
+  logic [31:0] div_abs_rs1;
+  logic [31:0] div_abs_rs2;
+  logic [32:0] div_sub;
+  logic [31:0] div_next_rem;
+  logic [31:0] div_next_quot;
+  logic [31:0] div_raw_res;
+  logic [31:0] div_final_res;
+
   assign imem_addr = pc;
   assign opcode = imem_rdata[6:0];
   assign rd = imem_rdata[11:7];
@@ -106,11 +129,27 @@ module rv32i_core #(
   assign req_addr = mem_addr_q;
   assign req_wdata = mem_wdata_q;
   assign req_wstrb = mem_wstrb_q;
+  assign core_sleep = (state == WFI_WAIT);
 
   assign irq_ext_en = irq_external && csr_mie[11];
   assign irq_tim_en = irq_timer && csr_mie[7];
   assign irq_pending_active = csr_mstatus[3] && (irq_ext_en || irq_tim_en);
   assign csr_write_en = (funct3[1:0] == 2'b01) || (rs1 != 5'd0);
+
+  assign mul_sign_a = (funct3 != 3'b011);
+  assign mul_sign_b = (funct3 == 3'b000) || (funct3 == 3'b001);
+  assign mul_a = $signed({mul_sign_a & rs1_value[31], rs1_value});
+  assign mul_b = $signed({mul_sign_b & rs2_value[31], rs2_value});
+  assign mul_prod = mul_a * mul_b;
+
+  assign div_signed_op = !funct3[0];
+  assign div_abs_rs1 = (div_signed_op && rs1_value[31]) ? (~rs1_value + 32'd1) : rs1_value;
+  assign div_abs_rs2 = (div_signed_op && rs2_value[31]) ? (~rs2_value + 32'd1) : rs2_value;
+  assign div_sub = {div_rem, div_quotient[31]} - {1'b0, div_divisor};
+  assign div_next_rem = !div_sub[32] ? div_sub[31:0] : {div_rem[30:0], div_quotient[31]};
+  assign div_next_quot = !div_sub[32] ? {div_quotient[30:0], 1'b1} : {div_quotient[30:0], 1'b0};
+  assign div_raw_res = div_is_rem ? div_next_rem : div_next_quot;
+  assign div_final_res = div_neg_res ? (~div_raw_res + 32'd1) : div_raw_res;
 
   always_comb begin
     csr_rdata = 32'd0;
@@ -173,6 +212,13 @@ module rv32i_core #(
       csr_mtvec <= 32'd0;
       csr_mepc <= 32'd0;
       csr_mcause <= 32'd0;
+      div_cnt <= 6'd0;
+      div_quotient <= 32'd0;
+      div_rem <= 32'd0;
+      div_divisor <= 32'd0;
+      div_neg_res <= 1'b0;
+      div_is_rem <= 1'b0;
+      div_rd <= 5'd0;
       for (index = 0; index < 32; index = index + 1) regs[index] <= 32'd0;
     end else begin
       perf_cycles <= perf_cycles + 32'd1;
@@ -215,6 +261,25 @@ module rv32i_core #(
                 3'b010: mem_wstrb_q <= (opcode == OP_STORE) ? 4'b1111 : 4'b0000;
                 default: mem_wstrb_q <= 4'b0000;
               endcase
+            end
+          end else if (opcode == OP_OP && funct7 == 7'b0000001 && funct3[2] == 1'b1) begin
+            if (rs2_value == 32'd0) begin
+              if (rd != 5'd0) regs[rd] <= funct3[1] ? rs1_value : 32'hffff_ffff;
+              perf_instructions <= perf_instructions + 32'd1;
+              pc <= pc + 32'd4;
+            end else if (!funct3[0] && rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) begin
+              if (rd != 5'd0) regs[rd] <= funct3[1] ? 32'd0 : 32'h8000_0000;
+              perf_instructions <= perf_instructions + 32'd1;
+              pc <= pc + 32'd4;
+            end else begin
+              div_quotient <= div_abs_rs1;
+              div_divisor <= div_abs_rs2;
+              div_rem <= 32'd0;
+              div_cnt <= 6'd31;
+              div_is_rem <= funct3[1];
+              div_neg_res <= div_signed_op && (funct3[1] ? rs1_value[31] : (rs1_value[31] ^ rs2_value[31]));
+              div_rd <= rd;
+              state <= DIV_WAIT;
             end
           end else begin
             perf_instructions <= perf_instructions + 32'd1;
@@ -311,14 +376,10 @@ module rv32i_core #(
                   10'b0100000_101: begin if (rd != 5'd0) regs[rd] <= $signed(rs1_value) >>> rs2_value[4:0]; pc <= pc + 32'd4; end
                   10'b0000000_110: begin if (rd != 5'd0) regs[rd] <= rs1_value | rs2_value; pc <= pc + 32'd4; end
                   10'b0000000_111: begin if (rd != 5'd0) regs[rd] <= rs1_value & rs2_value; pc <= pc + 32'd4; end
-                  10'b0000001_000: begin if (rd != 5'd0) regs[rd] <= rs1_value * rs2_value; pc <= pc + 32'd4; end
-                  10'b0000001_001: begin if (rd != 5'd0) regs[rd] <= 32'($signed({{32{rs1_value[31]}}, rs1_value}) * $signed({{32{rs2_value[31]}}, rs2_value}) >>> 32); pc <= pc + 32'd4; end
-                  10'b0000001_010: begin if (rd != 5'd0) regs[rd] <= 32'($signed({{32{rs1_value[31]}}, rs1_value}) * $signed({32'd0, rs2_value}) >>> 32); pc <= pc + 32'd4; end
-                  10'b0000001_011: begin if (rd != 5'd0) regs[rd] <= 32'(({32'd0, rs1_value} * {32'd0, rs2_value}) >> 32); pc <= pc + 32'd4; end
-                  10'b0000001_100: begin if (rd != 5'd0) regs[rd] <= (rs2_value == 32'd0) ? 32'hffff_ffff : ((rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) ? 32'h8000_0000 : 32'($signed(rs1_value) / $signed(rs2_value))); pc <= pc + 32'd4; end
-                  10'b0000001_101: begin if (rd != 5'd0) regs[rd] <= (rs2_value == 32'd0) ? 32'hffff_ffff : (rs1_value / rs2_value); pc <= pc + 32'd4; end
-                  10'b0000001_110: begin if (rd != 5'd0) regs[rd] <= (rs2_value == 32'd0) ? rs1_value : ((rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) ? 32'd0 : 32'($signed(rs1_value) % $signed(rs2_value))); pc <= pc + 32'd4; end
-                  10'b0000001_111: begin if (rd != 5'd0) regs[rd] <= (rs2_value == 32'd0) ? rs1_value : (rs1_value % rs2_value); pc <= pc + 32'd4; end
+                  10'b0000001_000: begin if (rd != 5'd0) regs[rd] <= mul_prod[31:0]; pc <= pc + 32'd4; end
+                  10'b0000001_001: begin if (rd != 5'd0) regs[rd] <= mul_prod[63:32]; pc <= pc + 32'd4; end
+                  10'b0000001_010: begin if (rd != 5'd0) regs[rd] <= mul_prod[63:32]; pc <= pc + 32'd4; end
+                  10'b0000001_011: begin if (rd != 5'd0) regs[rd] <= mul_prod[63:32]; pc <= pc + 32'd4; end
                   default: begin trap <= 1'b1; state <= TRAP; end
                 endcase
               end
@@ -385,6 +446,18 @@ module rv32i_core #(
               end
               default: begin trap <= 1'b1; state <= TRAP; end
             endcase
+          end
+        end
+        DIV_WAIT: begin
+          if (div_cnt == 6'd0) begin
+            if (div_rd != 5'd0) regs[div_rd] <= div_final_res;
+            perf_instructions <= perf_instructions + 32'd1;
+            pc <= pc + 32'd4;
+            state <= FETCH;
+          end else begin
+            div_rem <= div_next_rem;
+            div_quotient <= div_next_quot;
+            div_cnt <= div_cnt - 6'd1;
           end
         end
         MEM_REQUEST: begin

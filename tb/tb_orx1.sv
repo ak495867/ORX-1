@@ -203,6 +203,28 @@ module tb_orx1;
     read_accel(8'h44, rd_val);
     if (rd_val != 32'd4) failures = failures + 1;
 
+    write_accel(8'h30, 32'h7f7f_7f7f);
+    write_accel(8'h34, 32'h0202_0202);
+    write_accel(8'h38, 32'hfefe_fefe);
+    write_accel(8'h08, 32'd0);
+    write_accel(8'h60, 32'd0);
+    write_accel(8'h0c, 32'd0);
+    write_accel(8'h6c, 32'sd500);
+    write_accel(8'h00, 32'h321);
+    @(posedge clk);
+    #1;
+    if (accel_irq) failures = failures + 1;
+    read_accel(8'h04, rd_val);
+    if (rd_val != 32'd127) failures = failures + 1;
+    read_accel(8'h44, rd_val);
+    if ($signed(rd_val) != -32'sd128) failures = failures + 1;
+
+    write_accel(8'h6c, 32'sd100);
+    write_accel(8'h00, 32'h321);
+    @(posedge clk);
+    #1;
+    if (!accel_irq) failures = failures + 1;
+
     if (failures == 0) $display("ORX1_TEST_PASS");
     else $display("ORX1_TEST_FAIL %0d", failures);
     $finish;

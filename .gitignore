@@ -4,5 +4,6 @@ build/
 *.log
 .verilator/
 formal/cpu_bus/
+formal/wb_xbar/
 *.smt2
 .DS_Store

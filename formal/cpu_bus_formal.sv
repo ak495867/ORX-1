@@ -18,6 +18,7 @@ module cpu_bus_formal (
   logic rsp_valid;
   logic rsp_err;
   logic trap;
+  logic core_sleep;
   logic [31:0] perf_cycles;
   logic [31:0] perf_instructions;
   logic [31:0] perf_loads;
@@ -36,6 +37,7 @@ module cpu_bus_formal (
     .req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
     .req_addr(req_addr), .req_wdata(req_wdata), .req_wstrb(req_wstrb),
     .rsp_valid(rsp_valid), .rsp_rdata(rsp_rdata), .rsp_err(rsp_err), .trap(trap),
+    .core_sleep(core_sleep),
     .perf_cycles(perf_cycles), .perf_instructions(perf_instructions),
     .perf_loads(perf_loads), .perf_stores(perf_stores), .perf_branches(perf_branches),
     .perf_bus_requests(perf_bus_requests), .perf_wait_cycles(perf_wait_cycles),

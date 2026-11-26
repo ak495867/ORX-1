@@ -1,6 +1,6 @@
 module sram_sp #(
-  parameter integer WORDS = 1024,
-  parameter integer ADDR_WIDTH = 10
+  parameter integer WORDS = 2048,
+  parameter integer ADDR_WIDTH = 11
 ) (
   input logic clk,
   input logic reset,
@@ -13,6 +13,36 @@ module sram_sp #(
   input logic [ADDR_WIDTH-1:0] imem_addr,
   output logic [31:0] imem_rdata
 );
+`ifdef USE_OPENRAM
+  logic [31:0] bank_dout0 [0:3];
+  logic [31:0] bank_dout1 [0:3];
+  logic [1:0] sel0;
+  logic [1:0] sel1;
+  genvar b;
+
+  assign sel0 = addr[ADDR_WIDTH-1:ADDR_WIDTH-2];
+  assign sel1 = imem_addr[ADDR_WIDTH-1:ADDR_WIDTH-2];
+  assign rdata = bank_dout0[sel0];
+  assign imem_rdata = bank_dout1[sel1];
+
+  generate
+    for (b = 0; b < 4; b = b + 1) begin : gen_sram_banks
+      sky130_sram_2kbyte_1rw1r_32x512_8 u_bank (
+        .clk0(clk),
+        .csb0(!(en && !ack && (sel0 == b[1:0]))),
+        .web0(!(|wen)),
+        .wmask0(wen),
+        .addr0(addr[8:0]),
+        .din0(wdata),
+        .dout0(bank_dout0[b]),
+        .clk1(clk),
+        .csb1(1'b0),
+        .addr1(imem_addr[8:0]),
+        .dout1(bank_dout1[b])
+      );
+    end
+  endgenerate
+`else
   logic [31:0] mem [0:WORDS-1];
   integer i;
 
@@ -31,6 +61,7 @@ module sram_sp #(
       rdata <= mem[addr];
     end
   end
+`endif
 
   always_ff @(posedge clk or posedge reset) begin
     if (reset) begin

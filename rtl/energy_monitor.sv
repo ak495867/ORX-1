@@ -9,6 +9,7 @@ module energy_monitor (
   input logic sensor_event,
   input logic accelerator_event,
   input logic memory_event,
+  input logic core_sleep,
   input logic [31:0] cpu_cycles,
   input logic [31:0] cpu_instructions,
   input logic [31:0] cpu_loads,
@@ -18,12 +19,14 @@ module energy_monitor (
   input logic [31:0] cpu_wait_cycles
 );
   logic [31:0] cycle_count;
+  logic [31:0] active_cycles;
+  logic [31:0] sleep_cycles;
   logic [31:0] sensor_count;
   logic [31:0] accelerator_count;
   logic [31:0] memory_count;
   logic [31:0] weighted_activity;
 
-  assign weighted_activity = cycle_count + (sensor_count << 1) + (accelerator_count << 3) + (memory_count << 2);
+  assign weighted_activity = active_cycles + (sensor_count << 1) + (accelerator_count << 3) + (memory_count << 2);
 
   always_comb begin
     csr_rdata = 32'd0;
@@ -40,6 +43,8 @@ module energy_monitor (
       8'h28: csr_rdata = cpu_branches;
       8'h2c: csr_rdata = cpu_bus_requests;
       8'h30: csr_rdata = cpu_wait_cycles;
+      8'h34: csr_rdata = active_cycles;
+      8'h38: csr_rdata = sleep_cycles;
       default: csr_rdata = 32'd0;
     endcase
   end
@@ -47,16 +52,22 @@ module energy_monitor (
   always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
       cycle_count <= 32'd0;
+      active_cycles <= 32'd0;
+      sleep_cycles <= 32'd0;
       sensor_count <= 32'd0;
       accelerator_count <= 32'd0;
       memory_count <= 32'd0;
     end else if (csr_valid && csr_write && csr_addr == 8'h14 && csr_wdata[0]) begin
       cycle_count <= 32'd0;
+      active_cycles <= 32'd0;
+      sleep_cycles <= 32'd0;
       sensor_count <= 32'd0;
       accelerator_count <= 32'd0;
       memory_count <= 32'd0;
     end else begin
       cycle_count <= cycle_count + 32'd1;
+      if (core_sleep) sleep_cycles <= sleep_cycles + 32'd1;
+      else active_cycles <= active_cycles + 32'd1;
       if (sensor_event) sensor_count <= sensor_count + 32'd1;
       if (accelerator_event) accelerator_count <= accelerator_count + 32'd1;
       if (memory_event) memory_count <= memory_count + 32'd1;

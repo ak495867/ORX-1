@@ -96,8 +96,13 @@ module sha256_engine (
       if (start && !busy) begin
         busy <= 1'b1;
         round_cnt <= 6'd0;
-        a <= h0; b <= h1; c <= h2; d <= h3;
-        e <= h4; f <= h5; g <= h6; h <= h7;
+        if (init) begin
+          a <= 32'h6a09e667; b <= 32'hbb67ae85; c <= 32'h3c6ef372; d <= 32'ha54ff53a;
+          e <= 32'h510e527f; f <= 32'h9b05688c; g <= 32'h1f83d9ab; h <= 32'h5be0cd19;
+        end else begin
+          a <= h0; b <= h1; c <= h2; d <= h3;
+          e <= h4; f <= h5; g <= h6; h <= h7;
+        end
         w[0] <= block_data[31:0];
         w[1] <= block_data[63:32];
         w[2] <= block_data[95:64];

@@ -3,7 +3,7 @@
 `define ORX1_BOOT_BASE 32'h0000_0000
 `define ORX1_BOOT_LAST 32'h0000_03ff
 `define ORX1_SRAM_BASE 32'h0001_0000
-`define ORX1_SRAM_LAST 32'h0001_0fff
+`define ORX1_SRAM_LAST 32'h0001_1fff
 `define ORX1_SENSOR_BASE 32'h4000_0000
 `define ORX1_ACCEL_BASE 32'h4000_1000
 `define ORX1_BOOTCTRL_BASE 32'h4000_2000
@@ -13,6 +13,9 @@
 `define ORX1_DMA_BASE 32'h4000_6000
 `define ORX1_CORDIC_BASE 32'h4000_7000
 `define ORX1_IRQ_BASE 32'h4000_8000
+`define ORX1_GPIO_BASE 32'h4000_9000
+`define ORX1_SPI_BASE 32'h4000_a000
+`define ORX1_SYS_BASE 32'h4000_b000
 `define ORX1_REGION_SIZE 32'h0000_0100
 
 package orx1_pkg;
@@ -29,6 +32,9 @@ package orx1_pkg;
   localparam logic [31:0] DMA_BASE = `ORX1_DMA_BASE;
   localparam logic [31:0] CORDIC_BASE = `ORX1_CORDIC_BASE;
   localparam logic [31:0] IRQ_BASE = `ORX1_IRQ_BASE;
+  localparam logic [31:0] GPIO_BASE = `ORX1_GPIO_BASE;
+  localparam logic [31:0] SPI_BASE = `ORX1_SPI_BASE;
+  localparam logic [31:0] SYS_BASE = `ORX1_SYS_BASE;
   localparam logic [31:0] REGION_SIZE = `ORX1_REGION_SIZE;
 
   function automatic logic in_range(input logic [31:0] address, input logic [31:0] base, input logic [31:0] last);
