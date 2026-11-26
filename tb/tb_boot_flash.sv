@@ -254,10 +254,14 @@ module tb_boot_flash;
     end
 
     if (!ok_boot_release || ok_boot_fail || ok_trap || !ok_sleep) failures = failures + 1;
-    if (u_soc_ok.u_sram.mem[256] != 32'hcafe_beef) failures = failures + 1;
-    if (u_soc_ok.u_sram.mem[255] != 32'h600d_c007) failures = failures + 1;
+    wb_host_op(1'b0, 32'h0001_0400, 32'd0, tmp);
+    if (tmp != 32'hcafe_beef) failures = failures + 1;
+    wb_host_op(1'b0, 32'h0001_03fc, 32'd0, tmp);
+    if (tmp != 32'h600d_c007) failures = failures + 1;
     if (!bad_boot_fail || bad_boot_release || !bad_sleep) failures = failures + 1;
+`ifndef USE_OPENRAM
     if (u_soc_bad.u_sram.mem[256] != 32'd0 || u_soc_bad.u_sram.mem[255] != 32'd0) failures = failures + 1;
+`endif
 
     wb_host_op(1'b0, 32'h4000_200c, 32'd0, tmp);
     wb_host_op(1'b1, 32'h4000_200c, 32'd0, tmp);
@@ -272,7 +276,7 @@ module tb_boot_flash;
     if (tmp[3]) failures = failures + 1;
 
     if (failures == 0) $display("BOOT_FLASH_TEST_PASS cycles=%0d", cycles);
-    else $display("BOOT_FLASH_TEST_FAIL %0d cyc=%0d ok_pc=0x%08x ok_rel=%0d ok_fail=%0d ok_sleep=%0d sram0=0x%08x bad_pc=0x%08x bad_fail=%0d", failures, cycles, u_soc_ok.core.pc, ok_boot_release, ok_boot_fail, ok_sleep, u_soc_ok.u_sram.mem[0], u_soc_bad.core.pc, bad_boot_fail);
+    else $display("BOOT_FLASH_TEST_FAIL %0d cyc=%0d ok_pc=0x%08x ok_rel=%0d ok_fail=%0d ok_sleep=%0d bad_pc=0x%08x bad_fail=%0d", failures, cycles, u_soc_ok.core.fetch_pc, ok_boot_release, ok_boot_fail, ok_sleep, u_soc_bad.core.fetch_pc, bad_boot_fail);
     $finish;
   end
 endmodule

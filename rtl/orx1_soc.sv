@@ -32,6 +32,12 @@ module orx1_soc #(
   output logic wb_host_ack_o,
   output logic [31:0] wb_host_dat_o
 );
+`ifdef USE_OPENRAM
+  localparam bit USE_SYNC_IMEM = 1'b1;
+`else
+  localparam bit USE_SYNC_IMEM = 1'b0;
+`endif
+
   logic [31:0] imem_addr;
   logic [31:0] imem_rdata;
   logic [31:0] sram_imem_rdata;
@@ -50,6 +56,8 @@ module orx1_soc #(
   logic m1_ack, m1_err;
   logic [31:0] m1_rdata;
   logic wb_host_err;
+  logic m3_ack, m3_err;
+  logic [31:0] m3_rdata;
 
   logic [1:0] grant_master;
   logic [13:0] wb_s_cyc;
@@ -102,7 +110,6 @@ module orx1_soc #(
   logic [2:0] boot_addr_hi;
   logic boot_src_sram;
   logic boot_sram_rd;
-  logic [31:0] boot_rom [0:255];
 
   logic d_valid;
   logic d_ready;
@@ -130,82 +137,137 @@ module orx1_soc #(
   logic dma_rsp_valid;
   logic [31:0] dma_rsp_rdata;
 
+  logic tdma_req_valid;
+  logic tdma_req_ready;
+  logic tdma_req_write;
+  logic [31:0] tdma_req_addr;
+  logic [31:0] tdma_req_wdata;
+  logic [3:0] tdma_req_wstrb;
+  logic tdma_rsp_valid;
+  logic [31:0] tdma_rsp_rdata;
+
+  function automatic logic [31:0] bootloader_rom_lut(input logic [7:0] idx);
+    case (idx)
+      8'd0:  bootloader_rom_lut = 32'h000100b7;
+      8'd1:  bootloader_rom_lut = 32'h4000a137;
+      8'd2:  bootloader_rom_lut = 32'h400021b7;
+      8'd3:  bootloader_rom_lut = 32'h40003237;
+      8'd4:  bootloader_rom_lut = 32'h00012623;
+      8'd5:  bootloader_rom_lut = 32'h00800613;
+      8'd6:  bootloader_rom_lut = 32'h00c12023;
+      8'd7:  bootloader_rom_lut = 32'h030005b7;
+      8'd8:  bootloader_rom_lut = 32'h0b40056f;
+      8'd9:  bootloader_rom_lut = 32'h00000593;
+      8'd10: bootloader_rom_lut = 32'h0ac0056f;
+      8'd11: bootloader_rom_lut = 32'h4f526637;
+      8'd12: bootloader_rom_lut = 32'h83160613;
+      8'd13: bootloader_rom_lut = 32'h08c59863;
+      8'd14: bootloader_rom_lut = 32'h00000593;
+      8'd15: bootloader_rom_lut = 32'h0980056f;
+      8'd16: bootloader_rom_lut = 32'h00b006b3;
+      8'd17: bootloader_rom_lut = 32'h08068063;
+      8'd18: bootloader_rom_lut = 32'h00001637;
+      8'd19: bootloader_rom_lut = 32'h80160613;
+      8'd20: bootloader_rom_lut = 32'h06c6fa63;
+      8'd21: bootloader_rom_lut = 32'h00000713;
+      8'd22: bootloader_rom_lut = 32'h00e1a623;
+      8'd23: bootloader_rom_lut = 32'h00000593;
+      8'd24: bootloader_rom_lut = 32'h0740056f;
+      8'd25: bootloader_rom_lut = 32'h00b1a823;
+      8'd26: bootloader_rom_lut = 32'h00170713;
+      8'd27: bootloader_rom_lut = 32'h00800613;
+      8'd28: bootloader_rom_lut = 32'hfec714e3;
+      8'd29: bootloader_rom_lut = 32'h04000613;
+      8'd30: bootloader_rom_lut = 32'h00c1a023;
+      8'd31: bootloader_rom_lut = 32'h00000713;
+      8'd32: bootloader_rom_lut = 32'h000087b3;
+      8'd33: bootloader_rom_lut = 32'h00000593;
+      8'd34: bootloader_rom_lut = 32'h04c0056f;
+      8'd35: bootloader_rom_lut = 32'h00b7a023;
+      8'd36: bootloader_rom_lut = 32'h00478793;
+      8'd37: bootloader_rom_lut = 32'h00170713;
+      8'd38: bootloader_rom_lut = 32'hfed716e3;
+      8'd39: bootloader_rom_lut = 32'h00012023;
+      8'd40: bootloader_rom_lut = 32'h00d1aa23;
+      8'd41: bootloader_rom_lut = 32'h0a100613;
+      8'd42: bootloader_rom_lut = 32'h00c1a023;
+      8'd43: bootloader_rom_lut = 32'h0001a603;
+      8'd44: bootloader_rom_lut = 32'h00267713;
+      8'd45: bootloader_rom_lut = 32'hfe070ce3;
+      8'd46: bootloader_rom_lut = 32'h00467713;
+      8'd47: bootloader_rom_lut = 32'h00070463;
+      8'd48: bootloader_rom_lut = 32'h00008067;
+      8'd49: bootloader_rom_lut = 32'h04600613;
+      8'd50: bootloader_rom_lut = 32'h00c22023;
+      8'd51: bootloader_rom_lut = 32'h10500073;
+      8'd52: bootloader_rom_lut = 32'hffdff06f;
+      8'd53: bootloader_rom_lut = 32'h00b12223;
+      8'd54: bootloader_rom_lut = 32'h04900613;
+      8'd55: bootloader_rom_lut = 32'h00c12023;
+      8'd56: bootloader_rom_lut = 32'h00012603;
+      8'd57: bootloader_rom_lut = 32'h00267613;
+      8'd58: bootloader_rom_lut = 32'hfe061ce3;
+      8'd59: bootloader_rom_lut = 32'h00812583;
+      8'd60: bootloader_rom_lut = 32'h00050067;
+      default: bootloader_rom_lut = 32'd0;
+    endcase
+  endfunction
+
+`ifdef USE_OPENRAM
+  logic [31:0] imem_addr_q;
+  logic [31:0] boot_imem_q;
+  logic [31:0] boot_imem_comb;
+
+  assign boot_imem_comb = bootloader_rom_lut(imem_addr[9:2]);
+  always_ff @(posedge clk or posedge reset) begin
+    if (reset) begin
+      imem_addr_q <= 32'd0;
+      boot_imem_q <= 32'h0000_0013;
+    end else begin
+      imem_addr_q <= imem_addr;
+      boot_imem_q <= (boot_imem_comb != 32'd0) ? boot_imem_comb : 32'h0000_0013;
+    end
+  end
+
+  assign imem_rdata = orx1_pkg::in_range(imem_addr_q, orx1_pkg::SRAM_BASE, orx1_pkg::SRAM_LAST) ? sram_imem_rdata :
+                      ((imem_addr_q <= orx1_pkg::BOOT_LAST) ? boot_imem_q : 32'h0000_0013);
+  assign rom_rdata = bootloader_rom_lut(wb_s_adr[9:2]);
+  assign boot_word = boot_src_sram ? sram_imem_rdata : bootloader_rom_lut(boot_addr);
+  logic _unused_boot_param;
+  assign _unused_boot_param = &{1'b0, (BOOT_HEX != ""), BUILTIN_BOOTLOADER};
+`else
+  logic [31:0] boot_rom [0:255];
   integer rom_i;
   initial begin
     for (rom_i = 0; rom_i < 256; rom_i = rom_i + 1) boot_rom[rom_i] = 32'd0;
     if (BOOT_HEX != "") begin
       $readmemh(BOOT_HEX, boot_rom);
     end else if (BUILTIN_BOOTLOADER) begin
-      boot_rom[ 0] = 32'h000100b7;
-      boot_rom[ 1] = 32'h4000a137;
-      boot_rom[ 2] = 32'h400021b7;
-      boot_rom[ 3] = 32'h40003237;
-      boot_rom[ 4] = 32'h00012623;
-      boot_rom[ 5] = 32'h00800613;
-      boot_rom[ 6] = 32'h00c12023;
-      boot_rom[ 7] = 32'h030005b7;
-      boot_rom[ 8] = 32'h0b40056f;
-      boot_rom[ 9] = 32'h00000593;
-      boot_rom[10] = 32'h0ac0056f;
-      boot_rom[11] = 32'h4f526637;
-      boot_rom[12] = 32'h83160613;
-      boot_rom[13] = 32'h08c59863;
-      boot_rom[14] = 32'h00000593;
-      boot_rom[15] = 32'h0980056f;
-      boot_rom[16] = 32'h00b006b3;
-      boot_rom[17] = 32'h08068063;
-      boot_rom[18] = 32'h00001637;
-      boot_rom[19] = 32'h80160613;
-      boot_rom[20] = 32'h06c6fa63;
-      boot_rom[21] = 32'h00000713;
-      boot_rom[22] = 32'h00e1a623;
-      boot_rom[23] = 32'h00000593;
-      boot_rom[24] = 32'h0740056f;
-      boot_rom[25] = 32'h00b1a823;
-      boot_rom[26] = 32'h00170713;
-      boot_rom[27] = 32'h00800613;
-      boot_rom[28] = 32'hfec714e3;
-      boot_rom[29] = 32'h04000613;
-      boot_rom[30] = 32'h00c1a023;
-      boot_rom[31] = 32'h00000713;
-      boot_rom[32] = 32'h000087b3;
-      boot_rom[33] = 32'h00000593;
-      boot_rom[34] = 32'h04c0056f;
-      boot_rom[35] = 32'h00b7a023;
-      boot_rom[36] = 32'h00478793;
-      boot_rom[37] = 32'h00170713;
-      boot_rom[38] = 32'hfed716e3;
-      boot_rom[39] = 32'h00012023;
-      boot_rom[40] = 32'h00d1aa23;
-      boot_rom[41] = 32'h0a100613;
-      boot_rom[42] = 32'h00c1a023;
-      boot_rom[43] = 32'h0001a603;
-      boot_rom[44] = 32'h00267713;
-      boot_rom[45] = 32'hfe070ce3;
-      boot_rom[46] = 32'h00467713;
-      boot_rom[47] = 32'h00070463;
-      boot_rom[48] = 32'h00008067;
-      boot_rom[49] = 32'h04600613;
-      boot_rom[50] = 32'h00c22023;
-      boot_rom[51] = 32'h10500073;
-      boot_rom[52] = 32'hffdff06f;
-      boot_rom[53] = 32'h00b12223;
-      boot_rom[54] = 32'h04900613;
-      boot_rom[55] = 32'h00c12023;
-      boot_rom[56] = 32'h00012603;
-      boot_rom[57] = 32'h00267613;
-      boot_rom[58] = 32'hfe061ce3;
-      boot_rom[59] = 32'h00812583;
-      boot_rom[60] = 32'h00050067;
+      for (rom_i = 0; rom_i < 61; rom_i = rom_i + 1) boot_rom[rom_i] = bootloader_rom_lut(rom_i[7:0]);
     end
   end
+
+  assign imem_rdata = orx1_pkg::in_range(imem_addr, orx1_pkg::SRAM_BASE, orx1_pkg::SRAM_LAST) ? sram_imem_rdata :
+                      ((imem_addr <= orx1_pkg::BOOT_LAST && boot_rom[imem_addr[9:2]] != 32'd0) ? boot_rom[imem_addr[9:2]] : 32'h0000_0013);
+  assign rom_rdata = boot_rom[wb_s_adr[9:2]];
+  assign boot_word = boot_src_sram ? sram_imem_rdata : boot_rom[boot_addr];
+
+  always_ff @(posedge clk) begin
+    if (wb_s_cyc[0] && wb_s_stb[0] && wb_s_we && (grant_master == 2'd2)) begin
+      if (wb_s_sel[0]) boot_rom[wb_s_adr[9:2]][7:0]   <= wb_s_dat[7:0];
+      if (wb_s_sel[1]) boot_rom[wb_s_adr[9:2]][15:8]  <= wb_s_dat[15:8];
+      if (wb_s_sel[2]) boot_rom[wb_s_adr[9:2]][23:16] <= wb_s_dat[23:16];
+      if (wb_s_sel[3]) boot_rom[wb_s_adr[9:2]][31:24] <= wb_s_dat[31:24];
+    end
+  end
+`endif
 
   assign d_valid = req_valid;
   assign d_ready = req_ready;
   assign d_write = req_write;
   assign d_addr = req_addr;
   logic _unused_soc;
-  assign _unused_soc = &{1'b0, wb_s_adr[31:13], d_valid, d_ready, d_write, d_addr};
+  assign _unused_soc = &{1'b0, wb_s_adr[31:14], d_valid, d_ready, d_write, d_addr, m3_err, USE_SYNC_IMEM};
 
   assign core_rst = reset | cpu_reset_req;
   assign periph_rst = reset | wdt_reset_out;
@@ -219,10 +281,10 @@ module orx1_soc #(
   assign dma_rsp_valid = m1_ack | m1_err;
   assign dma_rsp_rdata = m1_rdata;
 
-  assign imem_rdata = orx1_pkg::in_range(imem_addr, orx1_pkg::SRAM_BASE, orx1_pkg::SRAM_LAST) ? sram_imem_rdata :
-                      ((imem_addr <= orx1_pkg::BOOT_LAST && boot_rom[imem_addr[9:2]] != 32'd0) ? boot_rom[imem_addr[9:2]] : 32'h0000_0013);
+  assign tdma_req_ready = m3_ack | m3_err;
+  assign tdma_rsp_valid = m3_ack | m3_err;
+  assign tdma_rsp_rdata = m3_rdata;
 
-  assign rom_rdata = boot_rom[wb_s_adr[9:2]];
   assign wb_s_ack[0] = wb_s_cyc[0] && wb_s_stb[0] && (!wb_s_we || (grant_master == 2'd2));
   assign wb_s_err[0] = wb_s_cyc[0] && wb_s_stb[0] && wb_s_we && (grant_master != 2'd2);
   assign wb_s_ack[1] = sram_ack;
@@ -232,17 +294,7 @@ module orx1_soc #(
 
   assign sensor_bus_valid = sensor_valid | (wb_s_cyc[2] && wb_s_stb[2] && wb_s_we && wb_s_adr[7:0] == 8'h08);
   assign sensor_bus_data = sensor_valid ? sensor_data : wb_s_dat[15:0];
-  assign boot_word = boot_src_sram ? sram_imem_rdata : boot_rom[boot_addr];
   assign auto_infer_trigger = sensor_auto_infer & sensor_result_valid;
-
-  always_ff @(posedge clk) begin
-    if (wb_s_cyc[0] && wb_s_stb[0] && wb_s_we && (grant_master == 2'd2)) begin
-      if (wb_s_sel[0]) boot_rom[wb_s_adr[9:2]][7:0]   <= wb_s_dat[7:0];
-      if (wb_s_sel[1]) boot_rom[wb_s_adr[9:2]][15:8]  <= wb_s_dat[15:8];
-      if (wb_s_sel[2]) boot_rom[wb_s_adr[9:2]][23:16] <= wb_s_dat[23:16];
-      if (wb_s_sel[3]) boot_rom[wb_s_adr[9:2]][31:24] <= wb_s_dat[31:24];
-    end
-  end
 
   always_ff @(posedge clk or posedge periph_rst) begin
     if (periph_rst) begin
@@ -317,6 +369,15 @@ module orx1_soc #(
     .m2_ack_o(wb_host_ack_o),
     .m2_dat_o(wb_host_dat_o),
     .m2_err_o(wb_host_err),
+    .m3_cyc_i(tdma_req_valid),
+    .m3_stb_i(tdma_req_valid),
+    .m3_we_i(tdma_req_write),
+    .m3_adr_i(tdma_req_addr),
+    .m3_dat_i(tdma_req_wdata),
+    .m3_sel_i(tdma_req_wstrb),
+    .m3_ack_o(m3_ack),
+    .m3_dat_o(m3_rdata),
+    .m3_err_o(m3_err),
     .grant_master_o(grant_master),
     .s_cyc_o(wb_s_cyc),
     .s_stb_o(wb_s_stb),
@@ -343,22 +404,24 @@ module orx1_soc #(
   );
 
   sram_sp #(
-    .WORDS(2048),
-    .ADDR_WIDTH(11)
+    .WORDS(4096),
+    .ADDR_WIDTH(12)
   ) u_sram (
     .clk(clk),
     .reset(periph_rst),
     .en(wb_s_cyc[1] && wb_s_stb[1]),
     .wen(wb_s_we ? wb_s_sel : 4'b0000),
-    .addr(wb_s_adr[12:2]),
+    .addr(wb_s_adr[13:2]),
     .wdata(wb_s_dat),
     .rdata(sram_rdata),
     .ack(sram_ack),
-    .imem_addr(boot_sram_rd ? {boot_addr_hi, boot_addr} : imem_addr[12:2]),
+    .imem_addr(boot_sram_rd ? {1'b0, boot_addr_hi, boot_addr} : imem_addr[13:2]),
     .imem_rdata(sram_imem_rdata)
   );
 
-  rv32i_core core (
+  rv32i_core #(
+    .SYNC_IMEM(USE_SYNC_IMEM)
+  ) core (
     .clk(clk), .reset(core_rst), .imem_addr(imem_addr), .imem_rdata(imem_rdata),
     .req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
     .req_addr(req_addr), .req_wdata(req_wdata), .req_wstrb(req_wstrb),
@@ -383,10 +446,20 @@ module orx1_soc #(
     .csr_addr(wb_s_adr[7:0]), .csr_wdata(wb_s_dat), .csr_rdata(accel_csr_rdata),
     .irq(accelerator_irq),
     .auto_infer_trigger(auto_infer_trigger),
-    .auto_infer_sample(sensor_result)
+    .auto_infer_sample(sensor_result),
+    .tdma_req_valid(tdma_req_valid),
+    .tdma_req_ready(tdma_req_ready),
+    .tdma_req_write(tdma_req_write),
+    .tdma_req_addr(tdma_req_addr),
+    .tdma_req_wdata(tdma_req_wdata),
+    .tdma_req_wstrb(tdma_req_wstrb),
+    .tdma_rsp_valid(tdma_rsp_valid),
+    .tdma_rsp_rdata(tdma_rsp_rdata)
   );
 
-  secure_boot boot_controller (
+  secure_boot #(
+    .SYNC_SRAM(USE_SYNC_IMEM)
+  ) boot_controller (
     .clk(clk), .reset(reset), .csr_valid(wb_s_cyc[4] && wb_s_stb[4]), .csr_write(wb_s_we),
     .csr_addr(wb_s_adr[7:0]), .csr_wdata(wb_s_dat), .csr_rdata(boot_csr_rdata),
     .boot_release(boot_release), .fail(boot_fail), .boot_addr(boot_addr),

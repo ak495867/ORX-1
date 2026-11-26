@@ -32,6 +32,16 @@ module wb_interconnect (
   output logic [31:0] m2_dat_o,
   output logic m2_err_o,
 
+  input logic m3_cyc_i,
+  input logic m3_stb_i,
+  input logic m3_we_i,
+  input logic [31:0] m3_adr_i,
+  input logic [31:0] m3_dat_i,
+  input logic [3:0] m3_sel_i,
+  output logic m3_ack_o,
+  output logic [31:0] m3_dat_o,
+  output logic m3_err_o,
+
   output logic [1:0] grant_master_o,
   output logic [13:0] s_cyc_o,
   output logic [13:0] s_stb_o,
@@ -57,13 +67,13 @@ module wb_interconnect (
   input logic [31:0] s13_dat_i,
   input logic [13:0] s_err_i
 );
-  logic [2:0] m_req;
+  logic [3:0] m_req;
   logic [1:0] grant_id;
   logic [1:0] locked_id;
   logic locked;
   logic [1:0] last_grant;
 
-  assign m_req = {m2_cyc_i && m2_stb_i, m1_cyc_i && m1_stb_i, m0_cyc_i && m0_stb_i};
+  assign m_req = {m3_cyc_i && m3_stb_i, m2_cyc_i && m2_stb_i, m1_cyc_i && m1_stb_i, m0_cyc_i && m0_stb_i};
   assign grant_master_o = grant_id;
 
   always_comb begin
@@ -75,17 +85,26 @@ module wb_interconnect (
         2'd0: begin
           if (m_req[1]) grant_id = 2'd1;
           else if (m_req[2]) grant_id = 2'd2;
+          else if (m_req[3]) grant_id = 2'd3;
           else grant_id = 2'd0;
         end
         2'd1: begin
           if (m_req[2]) grant_id = 2'd2;
+          else if (m_req[3]) grant_id = 2'd3;
           else if (m_req[0]) grant_id = 2'd0;
           else grant_id = 2'd1;
+        end
+        2'd2: begin
+          if (m_req[3]) grant_id = 2'd3;
+          else if (m_req[0]) grant_id = 2'd0;
+          else if (m_req[1]) grant_id = 2'd1;
+          else grant_id = 2'd2;
         end
         default: begin
           if (m_req[0]) grant_id = 2'd0;
           else if (m_req[1]) grant_id = 2'd1;
-          else grant_id = 2'd2;
+          else if (m_req[2]) grant_id = 2'd2;
+          else grant_id = 2'd3;
         end
       endcase
     end
@@ -115,6 +134,14 @@ module wb_interconnect (
         g_adr = m2_adr_i;
         g_dat = m2_dat_i;
         g_sel = m2_sel_i;
+      end
+      2'd3: begin
+        g_cyc = m3_cyc_i;
+        g_stb = m3_stb_i;
+        g_we  = m3_we_i;
+        g_adr = m3_adr_i;
+        g_dat = m3_dat_i;
+        g_sel = m3_sel_i;
       end
       default: begin
         g_cyc = m0_cyc_i;
@@ -189,18 +216,21 @@ module wb_interconnect (
   assign m0_dat_o = selected_rdata;
   assign m1_dat_o = selected_rdata;
   assign m2_dat_o = selected_rdata;
+  assign m3_dat_o = selected_rdata;
   assign m0_ack_o = (grant_id == 2'd0) ? selected_ack : 1'b0;
   assign m1_ack_o = (grant_id == 2'd1) ? selected_ack : 1'b0;
   assign m2_ack_o = (grant_id == 2'd2) ? selected_ack : 1'b0;
+  assign m3_ack_o = (grant_id == 2'd3) ? selected_ack : 1'b0;
   assign m0_err_o = (grant_id == 2'd0) ? selected_err : 1'b0;
   assign m1_err_o = (grant_id == 2'd1) ? selected_err : 1'b0;
   assign m2_err_o = (grant_id == 2'd2) ? selected_err : 1'b0;
+  assign m3_err_o = (grant_id == 2'd3) ? selected_err : 1'b0;
 
   always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
       locked <= 1'b0;
       locked_id <= 2'd0;
-      last_grant <= 2'd2;
+      last_grant <= 2'd3;
     end else begin
       if (g_cyc && g_stb && (selected_ack || selected_err)) begin
         locked <= 1'b0;

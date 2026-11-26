@@ -21,6 +21,8 @@ module dma_ctrl (
   dma_state_t state;
   logic [31:0] src_addr [0:1];
   logic [31:0] dst_addr [0:1];
+  logic [31:0] run_src_addr [0:1];
+  logic [31:0] run_dst_addr [0:1];
   logic [15:0] transfer_len [0:1];
   logic [15:0] cur_count [0:1];
   logic [1:0] ch_busy;
@@ -34,13 +36,13 @@ module dma_ctrl (
   logic start_ch0;
   logic start_ch1;
   logic [15:0] next_cnt;
-  logic [31:0] cur_dst_addr;
-  logic [31:0] next_src_addr;
+  logic [31:0] next_src_ptr;
+  logic [31:0] next_dst_ptr;
 
   assign dma_req_wstrb = 4'b1111;
-  assign cur_dst_addr = ch_dst_fixed[active_ch] ? dst_addr[active_ch] : (dst_addr[active_ch] + ({16'd0, cur_count[active_ch]} << 2));
   assign next_cnt = cur_count[active_ch] + 16'd1;
-  assign next_src_addr = ch_src_fixed[active_ch] ? src_addr[active_ch] : (src_addr[active_ch] + ({16'd0, next_cnt} << 2));
+  assign next_src_ptr = ch_src_fixed[active_ch] ? run_src_addr[active_ch] : (run_src_addr[active_ch] + 32'd4);
+  assign next_dst_ptr = ch_dst_fixed[active_ch] ? run_dst_addr[active_ch] : (run_dst_addr[active_ch] + 32'd4);
 
   always_comb begin
     start_ch0 = ch_busy[0] || (ch_auto[0] && sensor_event && transfer_len[0] != 16'd0);
@@ -72,6 +74,10 @@ module dma_ctrl (
       src_addr[1] <= 32'd0;
       dst_addr[0] <= 32'd0;
       dst_addr[1] <= 32'd0;
+      run_src_addr[0] <= 32'd0;
+      run_src_addr[1] <= 32'd0;
+      run_dst_addr[0] <= 32'd0;
+      run_dst_addr[1] <= 32'd0;
       transfer_len[0] <= 16'd0;
       transfer_len[1] <= 16'd0;
       cur_count[0] <= 16'd0;
@@ -95,11 +101,15 @@ module dma_ctrl (
         ch_busy[0] <= 1'b1;
         ch_done[0] <= 1'b0;
         cur_count[0] <= 16'd0;
+        run_src_addr[0] <= src_addr[0];
+        run_dst_addr[0] <= dst_addr[0];
       end
       if (ch_auto[1] && sensor_event && !ch_busy[1] && transfer_len[1] != 16'd0) begin
         ch_busy[1] <= 1'b1;
         ch_done[1] <= 1'b0;
         cur_count[1] <= 16'd0;
+        run_src_addr[1] <= src_addr[1];
+        run_dst_addr[1] <= dst_addr[1];
       end
 
       if (csr_valid && csr_write) begin
@@ -116,6 +126,8 @@ module dma_ctrl (
               ch_busy[0] <= 1'b1;
               ch_done[0] <= 1'b0;
               cur_count[0] <= 16'd0;
+              run_src_addr[0] <= src_addr[0];
+              run_dst_addr[0] <= dst_addr[0];
             end
           end
           8'h10: src_addr[1] <= csr_wdata;
@@ -130,6 +142,8 @@ module dma_ctrl (
               ch_busy[1] <= 1'b1;
               ch_done[1] <= 1'b0;
               cur_count[1] <= 16'd0;
+              run_src_addr[1] <= src_addr[1];
+              run_dst_addr[1] <= dst_addr[1];
             end
           end
           default: begin end
@@ -142,7 +156,19 @@ module dma_ctrl (
             active_ch <= next_ch;
             dma_req_valid <= 1'b1;
             dma_req_write <= 1'b0;
-            dma_req_addr <= ch_src_fixed[next_ch] ? src_addr[next_ch] : (src_addr[next_ch] + ({16'd0, cur_count[next_ch]} << 2));
+            dma_req_addr <= run_src_addr[next_ch];
+            state <= DMA_READ;
+          end else if (csr_valid && csr_write && csr_addr == 8'h0c && csr_wdata[0] && !ch_busy[0] && transfer_len[0] != 16'd0) begin
+            active_ch <= 1'b0;
+            dma_req_valid <= 1'b1;
+            dma_req_write <= 1'b0;
+            dma_req_addr <= src_addr[0];
+            state <= DMA_READ;
+          end else if (csr_valid && csr_write && csr_addr == 8'h1c && csr_wdata[0] && !ch_busy[1] && transfer_len[1] != 16'd0) begin
+            active_ch <= 1'b1;
+            dma_req_valid <= 1'b1;
+            dma_req_write <= 1'b0;
+            dma_req_addr <= src_addr[1];
             state <= DMA_READ;
           end else begin
             dma_req_valid <= 1'b0;
@@ -152,7 +178,7 @@ module dma_ctrl (
           if (dma_req_ready && dma_rsp_valid) begin
             dma_req_valid <= 1'b1;
             dma_req_write <= 1'b1;
-            dma_req_addr <= cur_dst_addr;
+            dma_req_addr <= run_dst_addr[active_ch];
             dma_req_wdata <= dma_rsp_rdata;
             state <= DMA_WRITE;
           end
@@ -161,21 +187,35 @@ module dma_ctrl (
           if (dma_req_ready) begin
             last_ch <= active_ch;
             if (next_cnt >= transfer_len[active_ch]) begin
-              dma_req_valid <= 1'b0;
               ch_busy[active_ch] <= 1'b0;
               ch_done[active_ch] <= 1'b1;
               dma_irq <= 1'b1;
-              state <= DMA_IDLE;
-            end else if (ch_busy[!active_ch]) begin
-              cur_count[active_ch] <= next_cnt;
-              dma_req_valid <= 1'b0;
-              state <= DMA_IDLE;
+              if (ch_busy[!active_ch]) begin
+                active_ch <= !active_ch;
+                dma_req_valid <= 1'b1;
+                dma_req_write <= 1'b0;
+                dma_req_addr <= run_src_addr[!active_ch];
+                state <= DMA_READ;
+              end else begin
+                dma_req_valid <= 1'b0;
+                state <= DMA_IDLE;
+              end
             end else begin
               cur_count[active_ch] <= next_cnt;
-              dma_req_valid <= 1'b1;
-              dma_req_write <= 1'b0;
-              dma_req_addr <= next_src_addr;
-              state <= DMA_READ;
+              run_src_addr[active_ch] <= next_src_ptr;
+              run_dst_addr[active_ch] <= next_dst_ptr;
+              if (ch_busy[!active_ch]) begin
+                active_ch <= !active_ch;
+                dma_req_valid <= 1'b1;
+                dma_req_write <= 1'b0;
+                dma_req_addr <= run_src_addr[!active_ch];
+                state <= DMA_READ;
+              end else begin
+                dma_req_valid <= 1'b1;
+                dma_req_write <= 1'b0;
+                dma_req_addr <= next_src_ptr;
+                state <= DMA_READ;
+              end
             end
           end
         end

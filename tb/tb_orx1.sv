@@ -50,7 +50,15 @@ module tb_orx1;
     .csr_rdata(accel_rdata),
     .irq(accel_irq),
     .auto_infer_trigger(1'b0),
-    .auto_infer_sample(16'd0)
+    .auto_infer_sample(16'd0),
+    .tdma_req_valid(),
+    .tdma_req_ready(1'b0),
+    .tdma_req_write(),
+    .tdma_req_addr(),
+    .tdma_req_wdata(),
+    .tdma_req_wstrb(),
+    .tdma_rsp_valid(1'b0),
+    .tdma_rsp_rdata(32'd0)
   );
 
   always #5 clk = ~clk;
@@ -224,6 +232,47 @@ module tb_orx1;
     @(posedge clk);
     #1;
     if (!accel_irq) failures = failures + 1;
+
+    read_accel(8'h70, rd_val);
+    if (rd_val != 32'h0000_807f) failures = failures + 1;
+
+    write_accel(8'h30, 32'h0101_0101);
+    write_accel(8'h74, 32'h0101_0101);
+    write_accel(8'h34, 32'h0202_0202);
+    write_accel(8'h38, 32'h0202_0202);
+    write_accel(8'h3c, 32'h0202_0202);
+    write_accel(8'h40, 32'h0202_0202);
+    write_accel(8'h78, 32'h0202_0202);
+    write_accel(8'h7c, 32'h0202_0202);
+    write_accel(8'h80, 32'h0202_0202);
+    write_accel(8'h84, 32'h0202_0202);
+    write_accel(8'h88, 32'h0202_0202);
+    write_accel(8'h8c, 32'h0202_0202);
+    write_accel(8'h90, 32'h0202_0202);
+    write_accel(8'h94, 32'h0202_0202);
+    write_accel(8'h98, 32'h0202_0202);
+    write_accel(8'h9c, 32'h0202_0202);
+    write_accel(8'ha0, 32'h0202_0202);
+    write_accel(8'ha4, 32'h0202_0202);
+    write_accel(8'h08, 32'sd4);
+    write_accel(8'h60, -32'sd4);
+    write_accel(8'h64, 32'sd10);
+    write_accel(8'h68, 32'sd0);
+    write_accel(8'ha8, 32'sd1);
+    write_accel(8'hac, 32'sd2);
+    write_accel(8'hb0, 32'sd3);
+    write_accel(8'hb4, -32'sd100);
+    write_accel(8'h0c, 32'd1);
+    write_accel(8'h00, 32'h519);
+    @(posedge clk);
+    #1;
+    if (!accel_irq) failures = failures + 1;
+    read_accel(8'h70, rd_val);
+    if (rd_val != 32'h080d_060a) failures = failures + 1;
+    read_accel(8'hc8, rd_val);
+    if (rd_val != 32'h0009_0908) failures = failures + 1;
+    read_accel(8'hbc, rd_val);
+    if (rd_val != 32'd9) failures = failures + 1;
 
     if (failures == 0) $display("ORX1_TEST_PASS");
     else $display("ORX1_TEST_FAIL %0d", failures);

@@ -2,6 +2,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -o pipefail -c
 BUILD := build
 RTL := rtl/orx1_pkg.sv rtl/rv32i_core.sv rtl/sensor_pipeline.sv rtl/neural_accel.sv rtl/sha256_engine.sv rtl/secure_boot.sv rtl/uart_core.sv rtl/timer_mtime.sv rtl/sram_sp.sv rtl/dma_ctrl.sv rtl/energy_monitor.sv rtl/wb_interconnect.sv rtl/cordic_engine.sv rtl/irq_ctrl.sv rtl/gpio_ctrl.sv rtl/spi_master.sv rtl/sys_ctrl.sv rtl/orx1_soc.sv
+OPENRAM_BB := rtl/sky130_sram_2kbyte_1rw1r_32x512_8.sv
 TB_LEAF := tb/tb_orx1.sv
 TB_BOOT := tb/tb_secure_boot.sv
 TB_SOC := tb/tb_soc.sv
@@ -13,9 +14,9 @@ TB_BENCH := tb/tb_cpu_benchmark.sv
 TB_MODEL_BENCH := tb/tb_model_bench.sv
 TB_COMP := tb/tb_riscv_compliance.sv
 
-.PHONY: all sim bench model-bench compliance sw test-sw lint synth formal clean
+.PHONY: all sim bench model-bench compliance sw test-sw lint synth floorplan formal clean
 
-all: test-sw sim bench model-bench compliance lint synth formal
+all: test-sw sim bench model-bench compliance lint synth floorplan formal
 
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -39,6 +40,9 @@ sim: $(BUILD)
 	iverilog -g2012 -Wall -s tb_soc -o $(BUILD)/tb_soc $(RTL) $(TB_SOC) 2>&1 | tee $(BUILD)/sim_compile_soc.log
 	vvp $(BUILD)/tb_soc | tee $(BUILD)/sim_soc.log
 	grep -q SOC_TEST_PASS $(BUILD)/sim_soc.log
+	iverilog -g2012 -Wall -D USE_OPENRAM -s tb_soc -o $(BUILD)/tb_soc_openram $(RTL) $(OPENRAM_BB) $(TB_SOC) 2>&1 | tee $(BUILD)/sim_compile_soc_openram.log
+	vvp $(BUILD)/tb_soc_openram | tee $(BUILD)/sim_soc_openram.log
+	grep -q SOC_TEST_PASS $(BUILD)/sim_soc_openram.log
 	iverilog -g2012 -Wall -s tb_firmware -o $(BUILD)/tb_firmware $(RTL) $(TB_FW) 2>&1 | tee $(BUILD)/sim_compile_fw.log
 	vvp $(BUILD)/tb_firmware | tee $(BUILD)/sim_fw.log
 	grep -q FIRMWARE_TEST_PASS $(BUILD)/sim_fw.log
@@ -51,6 +55,9 @@ sim: $(BUILD)
 	iverilog -g2012 -Wall -s tb_boot_flash -o $(BUILD)/tb_boot_flash $(RTL) $(TB_FLASH) 2>&1 | tee $(BUILD)/sim_compile_flash.log
 	vvp $(BUILD)/tb_boot_flash | tee $(BUILD)/sim_boot_flash.log
 	grep -q BOOT_FLASH_TEST_PASS $(BUILD)/sim_boot_flash.log
+	iverilog -g2012 -Wall -D USE_OPENRAM -s tb_boot_flash -o $(BUILD)/tb_boot_flash_openram $(RTL) $(OPENRAM_BB) $(TB_FLASH) 2>&1 | tee $(BUILD)/sim_compile_flash_openram.log
+	vvp $(BUILD)/tb_boot_flash_openram | tee $(BUILD)/sim_boot_flash_openram.log
+	grep -q BOOT_FLASH_TEST_PASS $(BUILD)/sim_boot_flash_openram.log
 
 bench: $(BUILD)
 	iverilog -g2012 -Wall -s tb_cpu_benchmark -o $(BUILD)/tb_cpu_benchmark $(RTL) $(TB_BENCH) 2>&1 | tee $(BUILD)/sim_compile_benchmark.log
@@ -78,10 +85,16 @@ sw: $(BUILD)
 
 lint: $(BUILD)
 	verilator --lint-only -Wall --top-module orx1_soc $(RTL) 2>&1 | tee $(BUILD)/verilator.log
+	verilator --lint-only -Wall -DUSE_OPENRAM --top-module orx1_soc $(RTL) $(OPENRAM_BB) 2>&1 | tee $(BUILD)/verilator_openram.log
 	verilator --lint-only -Wall --top-module caravel_user_project_wrapper $(RTL) rtl/caravel_user_project_wrapper.sv 2>&1 | tee $(BUILD)/verilator_caravel.log
 
 synth: $(BUILD)
 	yosys -p "read_verilog -sv $(RTL) rtl/caravel_user_project_wrapper.sv; hierarchy -top caravel_user_project_wrapper; proc; opt; check; stat" 2>&1 | tee $(BUILD)/yosys.log
+	yosys -p "read_verilog -sv -DUSE_OPENRAM -DSYNTHESIS $(RTL) $(OPENRAM_BB) rtl/caravel_user_project_wrapper.sv; hierarchy -top caravel_user_project_wrapper; proc; opt; check; stat" 2>&1 | tee $(BUILD)/yosys_openram.log
+
+floorplan: $(BUILD)
+	python3 scripts/floorplan_analyze.py --check-only 2>&1 | tee $(BUILD)/floorplan.log
+	grep -q FLOORPLAN_CHECK_PASS $(BUILD)/floorplan.log
 
 formal: $(BUILD)
 	command -v sby >/dev/null || (printf '%s\n' 'sby is required; install SymbiYosys and a solver before running make formal.'; exit 1)

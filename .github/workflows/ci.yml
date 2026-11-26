@@ -17,7 +17,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y iverilog verilator yosys z3
+          sudo apt-get install -y iverilog verilator yosys z3 python3-pil
           git clone --depth 1 https://github.com/YosysHQ/sby.git /tmp/sby
           sudo mkdir -p /opt/sby
           sudo cp -r /tmp/sby/sbysrc/. /opt/sby/
@@ -39,6 +39,8 @@ jobs:
         run: make lint
       - name: Run synthesis checks
         run: make synth
+      - name: Validate physical floorplan constraints
+        run: make floorplan
       - name: Validate formal sources
         run: make formal
       - name: Upload verification artifacts

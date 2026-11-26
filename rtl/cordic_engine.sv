@@ -11,14 +11,20 @@ module cordic_engine (
   logic signed [31:0] x_reg;
   logic signed [31:0] y_reg;
   logic signed [31:0] z_reg;
-  logic signed [31:0] x_shift;
-  logic signed [31:0] y_shift;
-  logic signed [31:0] angle_lut;
-  logic d_dir;
+  logic signed [31:0] x_mid;
+  logic signed [31:0] y_mid;
+  logic signed [31:0] z_mid;
+  logic signed [31:0] x_nxt;
+  logic signed [31:0] y_nxt;
+  logic signed [31:0] z_nxt;
+  logic [3:0] step0;
+  logic [3:0] step1;
+  logic d_dir0;
+  logic d_dir1;
   logic mode_rot;
   logic busy;
   logic done;
-  logic [3:0] step_cnt;
+  logic [2:0] step_cnt;
 
   function automatic logic signed [31:0] get_atan_lut(input logic [3:0] step);
     case (step)
@@ -42,10 +48,17 @@ module cordic_engine (
   endfunction
 
   assign cordic_irq = done;
-  assign x_shift = x_reg >>> step_cnt;
-  assign y_shift = y_reg >>> step_cnt;
-  assign angle_lut = get_atan_lut(step_cnt);
-  assign d_dir = mode_rot ? (z_reg >= 32'sd0) : (y_reg < 32'sd0);
+  assign step0 = {step_cnt, 1'b0};
+  assign step1 = {step_cnt, 1'b1};
+  assign d_dir0 = mode_rot ? (z_reg >= 32'sd0) : (y_reg < 32'sd0);
+  assign x_mid = d_dir0 ? (x_reg - (y_reg >>> step0)) : (x_reg + (y_reg >>> step0));
+  assign y_mid = d_dir0 ? (y_reg + (x_reg >>> step0)) : (y_reg - (x_reg >>> step0));
+  assign z_mid = d_dir0 ? (z_reg - get_atan_lut(step0)) : (z_reg + get_atan_lut(step0));
+
+  assign d_dir1 = mode_rot ? (z_mid >= 32'sd0) : (y_mid < 32'sd0);
+  assign x_nxt = d_dir1 ? (x_mid - (y_mid >>> step1)) : (x_mid + (y_mid >>> step1));
+  assign y_nxt = d_dir1 ? (y_mid + (x_mid >>> step1)) : (y_mid - (x_mid >>> step1));
+  assign z_nxt = d_dir1 ? (z_mid - get_atan_lut(step1)) : (z_mid + get_atan_lut(step1));
 
   always_comb begin
     csr_rdata = 32'd0;
@@ -67,7 +80,7 @@ module cordic_engine (
       mode_rot <= 1'b0;
       busy <= 1'b0;
       done <= 1'b0;
-      step_cnt <= 4'd0;
+      step_cnt <= 3'd0;
     end else begin
       done <= 1'b0;
       if (csr_valid && csr_write) begin
@@ -77,7 +90,7 @@ module cordic_engine (
             if (csr_wdata[1]) done <= 1'b0;
             if (csr_wdata[2] && !busy) begin
               busy <= 1'b1;
-              step_cnt <= 4'd0;
+              step_cnt <= 3'd0;
             end
           end
           8'h04: x_reg <= $signed(csr_wdata);
@@ -86,21 +99,14 @@ module cordic_engine (
           default: begin end
         endcase
       end else if (busy) begin
-        if (d_dir) begin
-          x_reg <= x_reg - y_shift;
-          y_reg <= y_reg + x_shift;
-          z_reg <= z_reg - angle_lut;
-        end else begin
-          x_reg <= x_reg + y_shift;
-          y_reg <= y_reg - x_shift;
-          z_reg <= z_reg + angle_lut;
-        end
-
-        if (step_cnt == 4'd15) begin
+        x_reg <= x_nxt;
+        y_reg <= y_nxt;
+        z_reg <= z_nxt;
+        if (step_cnt == 3'd7) begin
           busy <= 1'b0;
           done <= 1'b1;
         end else begin
-          step_cnt <= step_cnt + 4'd1;
+          step_cnt <= step_cnt + 3'd1;
         end
       end
     end

@@ -55,40 +55,50 @@ $rtl = @(
   'rtl/cordic_engine.sv','rtl/irq_ctrl.sv','rtl/gpio_ctrl.sv','rtl/spi_master.sv',
   'rtl/sys_ctrl.sv','rtl/orx1_soc.sv'
 )
+$openramBb = @('rtl/sky130_sram_2kbyte_1rw1r_32x512_8.sv')
 
 $verilatorCmd = if (Get-Command verilator_bin.exe -ErrorAction SilentlyContinue) { 'verilator_bin.exe' } else { 'verilator' }
 Invoke-Tool $verilatorCmd (@('--lint-only','-Wall','--top-module','orx1_soc') + $rtl) "build/verilator.log" | Out-Null
+Invoke-Tool $verilatorCmd (@('--lint-only','-Wall','-DUSE_OPENRAM','--top-module','orx1_soc') + $rtl + $openramBb) "build/verilator_openram.log" | Out-Null
 Invoke-Tool $verilatorCmd (@('--lint-only','-Wall','--top-module','caravel_user_project_wrapper') + $rtl + @('rtl/caravel_user_project_wrapper.sv')) "build/verilator_caravel.log" | Out-Null
 Write-Host "VERILATOR_STRICT_PASS"
 
 $tbs = @(
-  @{top='tb_orx1'; src='tb/tb_orx1.sv'; expect='ORX1_TEST_PASS'; log='build/sim_leaf.log'},
-  @{top='tb_secure_boot'; src='tb/tb_secure_boot.sv'; expect='SECURE_BOOT_TEST_PASS'; log='build/sim_boot.log'},
-  @{top='tb_soc'; src='tb/tb_soc.sv'; expect='SOC_TEST_PASS'; log='build/sim_soc.log'},
-  @{top='tb_firmware'; src='tb/tb_firmware.sv'; expect='FIRMWARE_TEST_PASS'; log='build/sim_fw.log'},
-  @{top='tb_interrupts'; src='tb/tb_interrupts.sv'; expect='INTERRUPT_TEST_PASS'; log='build/sim_irq.log'},
-  @{top='tb_peripherals'; src='tb/tb_peripherals.sv'; expect='PERIPHERALS_TEST_PASS'; log='build/sim_periph.log'},
-  @{top='tb_boot_flash'; src='tb/tb_boot_flash.sv'; expect='BOOT_FLASH_TEST_PASS'; log='build/sim_boot_flash.log'},
-  @{top='tb_cpu_benchmark'; src='tb/tb_cpu_benchmark.sv'; expect='BENCHMARK_TEST_PASS'; log='build/benchmark.log'},
-  @{top='tb_model_bench'; src='tb/tb_model_bench.sv'; expect='MODEL_BENCH_PASS'; log='build/model_benchmark.log'},
-  @{top='tb_riscv_compliance'; src='tb/tb_riscv_compliance.sv'; expect='RISCV_COMPLIANCE_PASS'; log='build/compliance.log'}
+  @{name='tb_orx1'; top='tb_orx1'; src=@('tb/tb_orx1.sv'); flags=@(); expect='ORX1_TEST_PASS'; log='build/sim_leaf.log'},
+  @{name='tb_secure_boot'; top='tb_secure_boot'; src=@('tb/tb_secure_boot.sv'); flags=@(); expect='SECURE_BOOT_TEST_PASS'; log='build/sim_boot.log'},
+  @{name='tb_soc'; top='tb_soc'; src=@('tb/tb_soc.sv'); flags=@(); expect='SOC_TEST_PASS'; log='build/sim_soc.log'},
+  @{name='tb_soc_openram'; top='tb_soc'; src=@($openramBb[0],'tb/tb_soc.sv'); flags=@('-D','USE_OPENRAM'); expect='SOC_TEST_PASS'; log='build/sim_soc_openram.log'},
+  @{name='tb_firmware'; top='tb_firmware'; src=@('tb/tb_firmware.sv'); flags=@(); expect='FIRMWARE_TEST_PASS'; log='build/sim_fw.log'},
+  @{name='tb_interrupts'; top='tb_interrupts'; src=@('tb/tb_interrupts.sv'); flags=@(); expect='INTERRUPT_TEST_PASS'; log='build/sim_irq.log'},
+  @{name='tb_peripherals'; top='tb_peripherals'; src=@('tb/tb_peripherals.sv'); flags=@(); expect='PERIPHERALS_TEST_PASS'; log='build/sim_periph.log'},
+  @{name='tb_boot_flash'; top='tb_boot_flash'; src=@('tb/tb_boot_flash.sv'); flags=@(); expect='BOOT_FLASH_TEST_PASS'; log='build/sim_boot_flash.log'},
+  @{name='tb_boot_flash_openram'; top='tb_boot_flash'; src=@($openramBb[0],'tb/tb_boot_flash.sv'); flags=@('-D','USE_OPENRAM'); expect='BOOT_FLASH_TEST_PASS'; log='build/sim_boot_flash_openram.log'},
+  @{name='tb_cpu_benchmark'; top='tb_cpu_benchmark'; src=@('tb/tb_cpu_benchmark.sv'); flags=@(); expect='BENCHMARK_TEST_PASS'; log='build/benchmark.log'},
+  @{name='tb_model_bench'; top='tb_model_bench'; src=@('tb/tb_model_bench.sv'); flags=@(); expect='MODEL_BENCH_PASS'; log='build/model_benchmark.log'},
+  @{name='tb_riscv_compliance'; top='tb_riscv_compliance'; src=@('tb/tb_riscv_compliance.sv'); flags=@(); expect='RISCV_COMPLIANCE_PASS'; log='build/compliance.log'}
 )
 foreach ($t in $tbs) {
-  $vvp = "build/$($t.top).vvp"
-  Invoke-Tool "iverilog" (@('-g2012','-Wall','-s',$t.top,'-o',$vvp) + $rtl + @($t.src)) | Out-Null
+  $vvp = "build/$($t.name).vvp"
+  Invoke-Tool "iverilog" (@('-g2012','-Wall') + $t.flags + @('-s',$t.top,'-o',$vvp) + $rtl + $t.src) | Out-Null
   Invoke-Tool "vvp" @($vvp) $t.log | Out-Null
   $hit = Select-String -Pattern $t.expect $t.log
   if (-not $hit) {
-    Write-Host "SIM_FAIL $($t.top)"
+    Write-Host "SIM_FAIL $($t.name)"
     Get-Content $t.log | Write-Host
     exit 1
   }
-  Write-Host "$($t.top): $($hit.Line.Trim())"
+  Write-Host "$($t.name): $($hit.Line.Trim())"
 }
 
 $yosysCmd = "read_verilog -sv $($rtl -join ' ') rtl/caravel_user_project_wrapper.sv; hierarchy -top caravel_user_project_wrapper; proc; opt; check; stat"
 Invoke-Tool "yosys" @('-q','-p',$yosysCmd) "build/yosys.log" | Out-Null
+$yosysOpenRamCmd = "read_verilog -sv -DUSE_OPENRAM -DSYNTHESIS $($rtl -join ' ') $($openramBb[0]) rtl/caravel_user_project_wrapper.sv; hierarchy -top caravel_user_project_wrapper; proc; opt; check; stat"
+Invoke-Tool "yosys" @('-q','-p',$yosysOpenRamCmd) "build/yosys_openram.log" | Out-Null
 Write-Host "YOSYS_SYNTH_CHECK_PASS"
+
+$fpOut = Invoke-Tool "python" @('scripts/floorplan_analyze.py','--check-only') "build/floorplan.log"
+if (-not (Select-String -Quiet -Pattern 'FLOORPLAN_CHECK_PASS' build/floorplan.log)) { exit 1 }
+$fpOut | Write-Host
 
 foreach ($sbyJob in @('formal/wb_xbar.sby','formal/neural_accel.sby','formal/secure_boot.sby','formal/cpu_bus.sby')) {
   $sbyLog = "build/$(([IO.Path]::GetFileNameWithoutExtension($sbyJob))).sby.log"

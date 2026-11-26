@@ -78,7 +78,7 @@ module spi_master (
               tx_shift <= csr_wdata[6] ? tx_data : {tx_data[7:0], 24'd0};
               rx_shift <= 32'd0;
               bit_cnt <= csr_wdata[6] ? 6'd31 : 6'd7;
-              div_cnt <= 16'd0;
+              div_cnt <= clk_div;
               sck_phase <= 1'b0;
               spi_sck <= csr_wdata[4];
             end
@@ -88,8 +88,8 @@ module spi_master (
           default: begin end
         endcase
       end else if (busy) begin
-        if (div_cnt >= clk_div) begin
-          div_cnt <= 16'd0;
+        if (div_cnt == 16'd0) begin
+          div_cnt <= clk_div;
           if (!sck_phase) begin
             sck_phase <= 1'b1;
             spi_sck <= ~cpol;
@@ -113,7 +113,7 @@ module spi_master (
             end
           end
         end else begin
-          div_cnt <= div_cnt + 16'd1;
+          div_cnt <= div_cnt - 16'd1;
         end
       end
     end

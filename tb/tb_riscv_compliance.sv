@@ -99,6 +99,9 @@ module tb_riscv_compliance;
   function automatic [31:0] enc_csr(input integer csr12, input integer rs1, input integer f3, input integer rd);
     enc_csr = {csr12[11:0], rs1[4:0], f3[2:0], rd[4:0], 7'b1110011};
   endfunction
+  function automatic [31:0] enc_custom0(input integer f7, input integer rs2, input integer rs1, input integer f3, input integer rd);
+    enc_custom0 = {f7[6:0], rs2[4:0], rs1[4:0], f3[2:0], rd[4:0], 7'b0001011};
+  endfunction
 
   task automatic emit(input logic [31:0] inst);
     begin
@@ -270,12 +273,32 @@ module tb_riscv_compliance;
       emit(enc_s(136, 15, 1, 3'b010));
       emit(enc_s(140, 16, 1, 3'b010));
 
+      emit(enc_u(32'h05050, 11, 7'b0110111));
+      emit(enc_i(-32'sd766, 11, 3'b000, 11, 7'b0010011));
+      emit(enc_u(32'h01030, 12, 7'b0110111));
+      emit(enc_i(-32'sd764, 12, 3'b000, 12, 7'b0010011));
+      emit(enc_custom0(7'b0000000, 12, 11, 3'b000, 13));
+      emit(enc_i(-200, 0, 3'b000, 14, 7'b0010011));
+      emit(enc_i(1, 0, 3'b000, 15, 7'b0010011));
+      emit(enc_custom0(7'b0000000, 15, 14, 3'b001, 16));
+      emit(enc_i(33, 0, 3'b000, 15, 7'b0010011));
+      emit(enc_custom0(7'b0000000, 15, 14, 3'b001, 17));
+      emit(enc_u(32'h11223, 18, 7'b0110111));
+      emit(enc_i(32'h300, 18, 3'b000, 18, 7'b0010011));
+      emit(enc_i(32'h44, 0, 3'b000, 19, 7'b0010011));
+      emit(enc_custom0(7'b0000000, 19, 18, 3'b010, 20));
+      emit(enc_s(148, 13, 1, 3'b010));
+      emit(enc_s(152, 16, 1, 3'b010));
+      emit(enc_s(156, 17, 1, 3'b010));
+      emit(enc_s(160, 20, 1, 3'b010));
+
       emit(32'h0000_0073);
       emit(32'h0010_0073);
       emit(32'hffff_ffff);
       emit(enc_csr(12'hf14, 1, 3'b101, 0));
       emit(enc_i(1, 2, 3'b010, 11, 7'b0000011));
       emit(enc_s(2, 11, 2, 3'b010));
+      emit(enc_custom0(7'b0000000, 0, 0, 3'b011, 0));
       emit(enc_s(144, 27, 1, 3'b010));
 
       emit(enc_i(1, 0, 3'b000, 11, 7'b0010011));
@@ -337,13 +360,18 @@ module tb_riscv_compliance;
       check_slot(288, 32'd15, "csrrwi_csrrsi");
       check_slot(289, 32'd13, "csrrci");
       if (ram[290] == 32'd0 || ram[291] == 32'd0) failures = failures + 1;
-      check_slot(292, 32'd6, "trap_count");
+      check_slot(292, 32'd7, "trap_count");
+      check_slot(293, 32'd30, "orx_dot4");
+      check_slot(294, -32'sd100, "orx_clip8_signed");
+      check_slot(295, 32'd0, "orx_clip8_relu");
+      check_slot(296, 32'h4411_2233, "orx_pack4");
       check_slot(320, 32'd11, "mcause_ecall");
       check_slot(321, 32'd3, "mcause_ebreak");
       check_slot(322, 32'd2, "mcause_illegal");
       check_slot(323, 32'd2, "mcause_ro_csr");
       check_slot(324, 32'd4, "mcause_mis_lw");
       check_slot(325, 32'd6, "mcause_mis_sw");
+      check_slot(326, 32'd2, "mcause_custom0_ill");
       if (failures != 0) test_passed = 0;
     end
 
@@ -358,7 +386,7 @@ module tb_riscv_compliance;
     end
 
     if (test_passed && failures == 0) begin
-      $display("RISCV_COMPLIANCE_PASS cycles=%0d checks=43", cycles);
+      $display("RISCV_COMPLIANCE_PASS cycles=%0d checks=48", cycles);
     end else begin
       $display("RISCV_COMPLIANCE_FAIL cycles=%0d trap=%0d done=%0d fail=%0d", cycles, trap, test_done, failures);
     end

@@ -12,9 +12,12 @@ module sha256_engine (
   logic [31:0] a, b, c, d, e, f, g, h;
   logic [31:0] h0, h1, h2, h3, h4, h5, h6, h7;
   logic [31:0] w [0:15];
+  logic [31:0] k_w_q;
   logic [31:0] cur_w;
-  logic [31:0] k_val;
   logic [31:0] t1, t2;
+  logic [5:0] next_round;
+  logic [31:0] next_w_sel;
+  logic [31:0] next_k_val;
   integer i;
 
   function automatic logic [31:0] rotr(input logic [31:0] val, input logic [4:0] amt);
@@ -59,9 +62,11 @@ module sha256_engine (
     endcase
   endfunction
 
-  assign k_val = get_k(round_cnt);
-  assign cur_w = (round_cnt < 6'd16) ? w[round_cnt[3:0]] : (sigma1(w[14]) + w[9] + sigma0(w[1]) + w[0]);
-  assign t1 = h + sum1(e) + ((e & f) ^ (~e & g)) + k_val + cur_w;
+  assign next_round = round_cnt + 6'd1;
+  assign cur_w = sigma1(w[14]) + w[9] + sigma0(w[1]) + w[0];
+  assign next_w_sel = (next_round < 6'd16) ? w[next_round[3:0]] : cur_w;
+  assign next_k_val = get_k(next_round);
+  assign t1 = h + sum1(e) + ((e & f) ^ (~e & g)) + k_w_q;
   assign t2 = sum0(a) + ((a & b) ^ (a & c) ^ (b & c));
   assign digest = {h0, h1, h2, h3, h4, h5, h6, h7};
 
@@ -70,6 +75,7 @@ module sha256_engine (
       round_cnt <= 6'd0;
       busy <= 1'b0;
       done <= 1'b0;
+      k_w_q <= 32'd0;
       h0 <= 32'h6a09e667;
       h1 <= 32'hbb67ae85;
       h2 <= 32'h3c6ef372;
@@ -96,6 +102,7 @@ module sha256_engine (
       if (start && !busy) begin
         busy <= 1'b1;
         round_cnt <= 6'd0;
+        k_w_q <= 32'h428a2f98 + block_data[31:0];
         if (init) begin
           a <= 32'h6a09e667; b <= 32'hbb67ae85; c <= 32'h3c6ef372; d <= 32'ha54ff53a;
           e <= 32'h510e527f; f <= 32'h9b05688c; g <= 32'h1f83d9ab; h <= 32'h5be0cd19;
@@ -128,7 +135,8 @@ module sha256_engine (
         f <= e;
         g <= f;
         h <= g;
-        if (round_cnt >= 6'd16) begin
+        k_w_q <= next_k_val + next_w_sel;
+        if (round_cnt >= 6'd15 && round_cnt < 6'd63) begin
           for (i = 0; i < 15; i = i + 1) w[i] <= w[i+1];
           w[15] <= cur_w;
         end
@@ -144,7 +152,7 @@ module sha256_engine (
           h6 <= h6 + f;
           h7 <= h7 + g;
         end else begin
-          round_cnt <= round_cnt + 6'd1;
+          round_cnt <= next_round;
         end
       end
     end

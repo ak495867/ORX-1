@@ -64,6 +64,35 @@ extern volatile uint32_t *orx1_host_reg(uint32_t addr);
 #define ACCEL_BIAS_2       REG32(ORX1_ACCEL_BASE + 0x64)
 #define ACCEL_BIAS_3       REG32(ORX1_ACCEL_BASE + 0x68)
 #define ACCEL_THRESH       REG32(ORX1_ACCEL_BASE + 0x6C)
+#define ACCEL_RESULT_PACKED    REG32(ORX1_ACCEL_BASE + 0x70)
+#define ACCEL_ACT_HI_PACKED    REG32(ORX1_ACCEL_BASE + 0x74)
+#define ACCEL_W_HI_ROW0        REG32(ORX1_ACCEL_BASE + 0x78)
+#define ACCEL_W_HI_ROW1        REG32(ORX1_ACCEL_BASE + 0x7C)
+#define ACCEL_W_HI_ROW2        REG32(ORX1_ACCEL_BASE + 0x80)
+#define ACCEL_W_HI_ROW3        REG32(ORX1_ACCEL_BASE + 0x84)
+#define ACCEL_W_ROW4           REG32(ORX1_ACCEL_BASE + 0x88)
+#define ACCEL_W_ROW5           REG32(ORX1_ACCEL_BASE + 0x8C)
+#define ACCEL_W_ROW6           REG32(ORX1_ACCEL_BASE + 0x90)
+#define ACCEL_W_ROW7           REG32(ORX1_ACCEL_BASE + 0x94)
+#define ACCEL_W_HI_ROW4        REG32(ORX1_ACCEL_BASE + 0x98)
+#define ACCEL_W_HI_ROW5        REG32(ORX1_ACCEL_BASE + 0x9C)
+#define ACCEL_W_HI_ROW6        REG32(ORX1_ACCEL_BASE + 0xA0)
+#define ACCEL_W_HI_ROW7        REG32(ORX1_ACCEL_BASE + 0xA4)
+#define ACCEL_BIAS_4           REG32(ORX1_ACCEL_BASE + 0xA8)
+#define ACCEL_BIAS_5           REG32(ORX1_ACCEL_BASE + 0xAC)
+#define ACCEL_BIAS_6           REG32(ORX1_ACCEL_BASE + 0xB0)
+#define ACCEL_BIAS_7           REG32(ORX1_ACCEL_BASE + 0xB4)
+#define ACCEL_RESULT_4         REG32(ORX1_ACCEL_BASE + 0xB8)
+#define ACCEL_RESULT_5         REG32(ORX1_ACCEL_BASE + 0xBC)
+#define ACCEL_RESULT_6         REG32(ORX1_ACCEL_BASE + 0xC0)
+#define ACCEL_RESULT_7         REG32(ORX1_ACCEL_BASE + 0xC4)
+#define ACCEL_RESULT_HI_PACKED REG32(ORX1_ACCEL_BASE + 0xC8)
+#define ACCEL_TDMA_ACT_BASE    REG32(ORX1_ACCEL_BASE + 0xCC)
+#define ACCEL_TDMA_W_BASE      REG32(ORX1_ACCEL_BASE + 0xD0)
+#define ACCEL_TDMA_BIAS_BASE   REG32(ORX1_ACCEL_BASE + 0xD4)
+#define ACCEL_TDMA_DST_BASE    REG32(ORX1_ACCEL_BASE + 0xD8)
+#define ACCEL_TDMA_SHAPE       REG32(ORX1_ACCEL_BASE + 0xDC)
+#define ACCEL_TDMA_CTRL        REG32(ORX1_ACCEL_BASE + 0xE0)
 
 #define BOOT_CTRL          REG32(ORX1_BOOTCTRL_BASE + 0x00)
 #define BOOT_DIGEST        REG32(ORX1_BOOTCTRL_BASE + 0x04)
@@ -134,6 +163,50 @@ extern volatile uint32_t *orx1_host_reg(uint32_t addr);
 #define SYS_WDT_LOAD       REG32(ORX1_SYS_BASE + 0x04)
 #define SYS_WDT_CTRL       REG32(ORX1_SYS_BASE + 0x08)
 #define SYS_WDT_COUNT      REG32(ORX1_SYS_BASE + 0x0C)
+
+static inline int32_t orx_dot4(uint32_t a, uint32_t b) {
+#ifdef ORX1_HOST_TEST
+  int32_t sum = 0;
+  for (int i = 0; i < 4; ++i) {
+    int8_t av = (int8_t)((a >> (8 * i)) & 0xFFu);
+    int8_t bv = (int8_t)((b >> (8 * i)) & 0xFFu);
+    sum += (int32_t)av * (int32_t)bv;
+  }
+  return sum;
+#else
+  int32_t res;
+  __asm__ volatile (".insn r 0x0b, 0, 0, %0, %1, %2" : "=r"(res) : "r"(a), "r"(b));
+  return res;
+#endif
+}
+
+static inline int32_t orx_clip8(int32_t val, uint32_t ctrl) {
+#ifdef ORX1_HOST_TEST
+  uint32_t sh = ctrl & 0x1Fu;
+  int32_t sh_val;
+  if (sh == 0u) sh_val = val;
+  else if (val < 0) sh_val = (int32_t)(~((uint32_t)(~val) >> sh));
+  else sh_val = (int32_t)((uint32_t)val >> sh);
+  if ((ctrl & 0x20u) && (sh_val < 0)) sh_val = 0;
+  if (sh_val > 127) sh_val = 127;
+  if (sh_val < -128) sh_val = -128;
+  return sh_val;
+#else
+  int32_t res;
+  __asm__ volatile (".insn r 0x0b, 1, 0, %0, %1, %2" : "=r"(res) : "r"(val), "r"(ctrl));
+  return res;
+#endif
+}
+
+static inline uint32_t orx_pack4(uint32_t acc, int32_t val) {
+#ifdef ORX1_HOST_TEST
+  return ((((uint32_t)(uint8_t)val) & 0xFFu) << 24) | (acc >> 8);
+#else
+  uint32_t res;
+  __asm__ volatile (".insn r 0x0b, 2, 0, %0, %1, %2" : "=r"(res) : "r"(acc), "r"(val));
+  return res;
+#endif
+}
 
 static inline int32_t cordic_vector_magnitude(int16_t x, int16_t y) {
   CORDIC_X = (int32_t)x;

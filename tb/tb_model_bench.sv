@@ -60,6 +60,9 @@ module tb_model_bench;
   function automatic [31:0] enc_csr(input integer csr12, input integer rs1, input integer f3, input integer rd);
     enc_csr = {csr12[11:0], rs1[4:0], f3[2:0], rd[4:0], 7'b1110011};
   endfunction
+  function automatic [31:0] enc_custom0(input integer f7, input integer rs2, input integer rs1, input integer f3, input integer rd);
+    enc_custom0 = {f7[6:0], rs2[4:0], rs1[4:0], f3[2:0], rd[4:0], 7'b0001011};
+  endfunction
   function automatic [31:0] enc_addi(input integer rd, input integer rs1, input integer imm12);
     enc_addi = enc_i(imm12, rs1, 3'b000, rd, 7'b0010011);
   endfunction
@@ -130,6 +133,11 @@ module tb_model_bench;
   integer l_cpu_row, l_cpu_col, p_cpu_relu, p_cpu_hi, p_cpu_lo;
   integer l_npu_poll1, l_mlp_sample, l_mlp_t0, l_mlp_t1, l_mlp_l2;
   integer l_sp_poll, l_dma_poll, l_cordic_poll;
+  integer l_npu8_poll, l_tdma1_poll, l_tdma2_poll;
+  integer w8_in [0:7];
+  integer w8_w [0:63];
+  integer w8_b [0:7];
+  integer w8_gold [0:7];
 
   integer w1_t0 [0:15];
   integer w1_t1 [0:15];
@@ -268,6 +276,25 @@ module tb_model_bench;
       u_soc.u_sram.mem[80 + s_i] = 32'h1000 + s_i;
     end
 
+    for (r_i = 0; r_i < 8; r_i = r_i + 1) begin
+      w8_in[r_i] = ((r_i * 5 + 3) % 13) - 6;
+      w8_b[r_i] = (r_i * 7) - 20;
+      for (c_i = 0; c_i < 8; c_i = c_i + 1) begin
+        w8_w[r_i * 8 + c_i] = (((r_i * 11 + c_i * 7 + 1) % 15) - 7);
+      end
+    end
+    u_soc.u_sram.mem[520] = pack4(w8_in[0], w8_in[1], w8_in[2], w8_in[3]);
+    u_soc.u_sram.mem[521] = pack4(w8_in[4], w8_in[5], w8_in[6], w8_in[7]);
+    for (r_i = 0; r_i < 8; r_i = r_i + 1) begin
+      u_soc.u_sram.mem[522 + r_i] = pack4(w8_w[r_i*8+0], w8_w[r_i*8+1], w8_w[r_i*8+2], w8_w[r_i*8+3]);
+      u_soc.u_sram.mem[530 + r_i] = pack4(w8_w[r_i*8+4], w8_w[r_i*8+5], w8_w[r_i*8+6], w8_w[r_i*8+7]);
+      u_soc.u_sram.mem[538 + r_i] = w8_b[r_i];
+      acc_v = w8_b[r_i];
+      for (c_i = 0; c_i < 8; c_i = c_i + 1) acc_v = acc_v + s8(w8_in[c_i]) * s8(w8_w[r_i*8+c_i]);
+      w8_gold[r_i] = ref_clamp_relu(acc_v, 1, 1);
+    end
+
+    emit_to_sram = 0;
     snap_fn_pc = 220;
     emit_pc = snap_fn_pc;
     emit(enc_lw(12, 3, 32'h00));
@@ -298,6 +325,8 @@ module tb_model_bench;
     emit_pc = 1024;
     emit(enc_addi(26, 0, snap_fn_pc * 4));
     emit(enc_u(32'h00010, 1, 7'b0110111));
+    emit(enc_u(32'h00011, 25, 7'b0110111));
+    emit(enc_addi(25, 25, -32'sd2048));
     emit(enc_u(32'h40001, 2, 7'b0110111));
     emit(enc_u(32'h40004, 3, 7'b0110111));
     emit(enc_u(32'h40000, 4, 7'b0110111));
@@ -476,6 +505,77 @@ module tb_model_bench;
     emit(enc_lw(12, 6, 16)); emit(enc_sw(12, 1, 16'h1c0));
     emit_snap(11);
 
+    emit_snap(14);
+    emit(enc_lw(12, 1, 0));
+    emit(enc_addi(20, 0, 35));
+    emit(enc_addi(16, 0, 0));
+    emit(enc_lw(13, 1, 4));  emit(enc_lw(14, 1, 20)); emit(enc_custom0(7'b0000000, 13, 12, 3'b000, 15)); emit(enc_add(15, 15, 14)); emit(enc_custom0(7'b0000000, 20, 15, 3'b001, 15)); emit(enc_custom0(7'b0000000, 15, 16, 3'b010, 16));
+    emit(enc_lw(13, 1, 8));  emit(enc_lw(14, 1, 24)); emit(enc_custom0(7'b0000000, 13, 12, 3'b000, 15)); emit(enc_add(15, 15, 14)); emit(enc_custom0(7'b0000000, 20, 15, 3'b001, 15)); emit(enc_custom0(7'b0000000, 15, 16, 3'b010, 16));
+    emit(enc_lw(13, 1, 12)); emit(enc_lw(14, 1, 28)); emit(enc_custom0(7'b0000000, 13, 12, 3'b000, 15)); emit(enc_add(15, 15, 14)); emit(enc_custom0(7'b0000000, 20, 15, 3'b001, 15)); emit(enc_custom0(7'b0000000, 15, 16, 3'b010, 16));
+    emit(enc_lw(13, 1, 16)); emit(enc_lw(14, 1, 32)); emit(enc_custom0(7'b0000000, 13, 12, 3'b000, 15)); emit(enc_add(15, 15, 14)); emit(enc_custom0(7'b0000000, 20, 15, 3'b001, 15)); emit(enc_custom0(7'b0000000, 15, 16, 3'b010, 16));
+    emit(enc_sw(16, 1, 44));
+    emit_snap(15);
+
+    emit_snap(16);
+    emit(enc_lw(12, 25, 32));  emit(enc_sw(12, 2, 16'h30));
+    emit(enc_lw(12, 25, 36));  emit(enc_sw(12, 2, 16'h74));
+    emit(enc_lw(12, 25, 40));  emit(enc_sw(12, 2, 16'h34));
+    emit(enc_lw(12, 25, 44));  emit(enc_sw(12, 2, 16'h38));
+    emit(enc_lw(12, 25, 48));  emit(enc_sw(12, 2, 16'h3c));
+    emit(enc_lw(12, 25, 52));  emit(enc_sw(12, 2, 16'h40));
+    emit(enc_lw(12, 25, 56));  emit(enc_sw(12, 2, 16'h88));
+    emit(enc_lw(12, 25, 60));  emit(enc_sw(12, 2, 16'h8c));
+    emit(enc_lw(12, 25, 64));  emit(enc_sw(12, 2, 16'h90));
+    emit(enc_lw(12, 25, 68));  emit(enc_sw(12, 2, 16'h94));
+    emit(enc_lw(12, 25, 72));  emit(enc_sw(12, 2, 16'h78));
+    emit(enc_lw(12, 25, 76));  emit(enc_sw(12, 2, 16'h7c));
+    emit(enc_lw(12, 25, 80));  emit(enc_sw(12, 2, 16'h80));
+    emit(enc_lw(12, 25, 84));  emit(enc_sw(12, 2, 16'h84));
+    emit(enc_lw(12, 25, 88));  emit(enc_sw(12, 2, 16'h98));
+    emit(enc_lw(12, 25, 92));  emit(enc_sw(12, 2, 16'h9c));
+    emit(enc_lw(12, 25, 96));  emit(enc_sw(12, 2, 16'ha0));
+    emit(enc_lw(12, 25, 100)); emit(enc_sw(12, 2, 16'ha4));
+    emit(enc_lw(12, 25, 104)); emit(enc_sw(12, 2, 16'h08));
+    emit(enc_lw(12, 25, 108)); emit(enc_sw(12, 2, 16'h60));
+    emit(enc_lw(12, 25, 112)); emit(enc_sw(12, 2, 16'h64));
+    emit(enc_lw(12, 25, 116)); emit(enc_sw(12, 2, 16'h68));
+    emit(enc_lw(12, 25, 120)); emit(enc_sw(12, 2, 16'ha8));
+    emit(enc_lw(12, 25, 124)); emit(enc_sw(12, 2, 16'hac));
+    emit(enc_lw(12, 25, 128)); emit(enc_sw(12, 2, 16'hb0));
+    emit(enc_lw(12, 25, 132)); emit(enc_sw(12, 2, 16'hb4));
+    emit(enc_addi(12, 0, 1));  emit(enc_sw(12, 2, 16'h0c));
+    emit(enc_addi(12, 0, 16'h519)); emit(enc_sw(12, 2, 16'h00));
+    l_npu8_poll = emit_pc;
+    emit(enc_lw(12, 2, 0)); emit(enc_i(1, 12, 3'b111, 12, 7'b0010011));
+    emit(enc_b((l_npu8_poll - emit_pc) * 4, 0, 12, 3'b001));
+    emit(enc_lw(12, 2, 16'h70)); emit(enc_sw(12, 25, 136));
+    emit(enc_lw(12, 2, 16'hc8)); emit(enc_sw(12, 25, 140));
+    emit_snap(17);
+
+    emit_snap(18);
+    emit(enc_addi(12, 1, 16'h0a0)); emit(enc_sw(12, 2, 16'hcc));
+    emit(enc_addi(12, 1, 16'h050)); emit(enc_sw(12, 2, 16'hd0));
+    emit(enc_addi(12, 1, 16'h070)); emit(enc_sw(12, 2, 16'hd4));
+    emit(enc_addi(12, 25, 192));     emit(enc_sw(12, 2, 16'hd8));
+    emit(enc_u(32'h00040, 12, 7'b0110111));
+    emit(enc_addi(12, 12, 16'h102)); emit(enc_sw(12, 2, 16'hdc));
+    emit(enc_addi(12, 0, 16'h0bd));  emit(enc_sw(12, 2, 16'he0));
+    l_tdma1_poll = emit_pc;
+    emit(enc_lw(12, 2, 16'he0)); emit(enc_i(1, 12, 3'b111, 12, 7'b0010011));
+    emit(enc_b((l_tdma1_poll - emit_pc) * 4, 0, 12, 3'b001));
+
+    emit(enc_addi(12, 25, 192));     emit(enc_sw(12, 2, 16'hcc));
+    emit(enc_addi(12, 1, 16'h080));  emit(enc_sw(12, 2, 16'hd0));
+    emit(enc_addi(12, 1, 16'h090));  emit(enc_sw(12, 2, 16'hd4));
+    emit(enc_addi(12, 25, 208));     emit(enc_sw(12, 2, 16'hd8));
+    emit(enc_u(32'h00040, 12, 7'b0110111));
+    emit(enc_addi(12, 12, 16'h101)); emit(enc_sw(12, 2, 16'hdc));
+    emit(enc_addi(12, 0, 16'h0fd));  emit(enc_sw(12, 2, 16'he0));
+    l_tdma2_poll = emit_pc;
+    emit(enc_lw(12, 2, 16'he0)); emit(enc_i(1, 12, 3'b111, 12, 7'b0010011));
+    emit(enc_b((l_tdma2_poll - emit_pc) * 4, 0, 12, 3'b001));
+    emit_snap(19);
+
     emit_snap(12);
     emit(enc_sw(0, 2, 16'h30));
     emit(enc_u(32'h01010, 12, 7'b0110111));
@@ -504,7 +604,7 @@ module tb_model_bench;
     emit(32'h1050_0073);
     emit(32'hffdff06f);
 
-    if (emit_pc > 2048) begin
+    if (emit_pc > 4096) begin
       $display("SRAM_OVERFLOW emit_pc=%0d", emit_pc);
       $finish;
     end
@@ -556,22 +656,46 @@ module tb_model_bench;
       if (u_soc.u_sram.mem[96 + s_i] != (32'h1000 + s_i)) failures = failures + 1;
     end
     if (u_soc.u_sram.mem[112] < 32'd495 || u_soc.u_sram.mem[112] > 32'd505) failures = failures + 1;
+    if (u_soc.u_sram.mem[11] != pack4(13, 75, 0, 88)) begin
+      $display("SIMD_4X4_MISMATCH got=0x%08x exp=0x%08x", u_soc.u_sram.mem[11], pack4(13, 75, 0, 88));
+      failures = failures + 1;
+    end
+    if (u_soc.u_sram.mem[546] != pack4(w8_gold[0], w8_gold[1], w8_gold[2], w8_gold[3]) ||
+        u_soc.u_sram.mem[547] != pack4(w8_gold[4], w8_gold[5], w8_gold[6], w8_gold[7])) begin
+      $display("NPU_8X8_MISMATCH lo=0x%08x hi=0x%08x", u_soc.u_sram.mem[546], u_soc.u_sram.mem[547]);
+      failures = failures + 1;
+    end
+    for (s_i = 0; s_i < 4; s_i = s_i + 1) begin
+      if (u_soc.u_sram.mem[564 + s_i] != pack4(mlp_gold[s_i*4+0], mlp_gold[s_i*4+1], mlp_gold[s_i*4+2], mlp_gold[s_i*4+3])) begin
+        $display("TDMA_MLP_MISMATCH s=%0d got=0x%08x exp=0x%08x", s_i, u_soc.u_sram.mem[564 + s_i], pack4(mlp_gold[s_i*4+0], mlp_gold[s_i*4+1], mlp_gold[s_i*4+2], mlp_gold[s_i*4+3]));
+        failures = failures + 1;
+      end
+    end
     if (u_soc.u_sram.mem[254] != 32'd1) failures = failures + 1;
 
     $display("---------------------------------------------------------------------------------------------------------------------------------------------------");
-    $display("ORX-1 Hardware Model & Speed Benchmark @ 50 MHz (code_words=%0d/1024 SRAM)", emit_pc - 1024);
+    $display("ORX-1 Hardware Model & Speed Benchmark @ 50 MHz (code_words=%0d/3072 SRAM)", emit_pc - 1024);
     $display("---------------------------------------------------------------------------------------------------------------------------------------------------");
     report_bench("cpu_mlp_4x4",      0,  1,  16, 0);
+    report_bench("cpu_simd_4x4",    14, 15,  16, 0);
     report_bench("npu_mlp_4x4",      2,  3,  16, 0);
+    report_bench("npu_wide_8x8",    16, 17,  64, 0);
     report_bench("npu_mlp_8x4x4_x4", 4,  5, 192, 0);
+    report_bench("npu_tdma_mlp_x4", 18, 19, 192, 0);
     report_bench("npu_sparse_2_4",   6,  7,   8, 0);
     report_bench("dma_burst_16w",    8,  9,   0, 0);
     report_bench("cordic_vec_mag",  10, 11,   0, 0);
     report_bench("auto_stream_wfi", 12, 13,  68, u_soc.u_sram.mem[254]);
     $display("---------------------------------------------------------------------------------------------------------------------------------------------------");
+    $display("SPEEDUP_SIMD_VS_SCALAR=%0.2fx",
+             $itor(u_soc.u_sram.mem[128 + 1*5 + 0] - u_soc.u_sram.mem[128 + 0*5 + 0]) /
+             $itor(u_soc.u_sram.mem[128 + 15*5 + 0] - u_soc.u_sram.mem[128 + 14*5 + 0]));
     $display("SPEEDUP_4X4_NPU_VS_CPU=%0.2fx",
              $itor(u_soc.u_sram.mem[128 + 1*5 + 0] - u_soc.u_sram.mem[128 + 0*5 + 0]) /
              $itor(u_soc.u_sram.mem[128 + 3*5 + 0] - u_soc.u_sram.mem[128 + 2*5 + 0]));
+    $display("SPEEDUP_TDMA_VS_POLL_MLP=%0.2fx",
+             $itor(u_soc.u_sram.mem[128 + 5*5 + 0] - u_soc.u_sram.mem[128 + 4*5 + 0]) /
+             $itor(u_soc.u_sram.mem[128 + 19*5 + 0] - u_soc.u_sram.mem[128 + 18*5 + 0]));
     $display("ENERGY_RATIO_4X4_CPU_TO_NPU=%0.2fx",
              $itor(u_soc.u_sram.mem[128 + 1*5 + 2] - u_soc.u_sram.mem[128 + 0*5 + 2]) /
              $itor(u_soc.u_sram.mem[128 + 3*5 + 2] - u_soc.u_sram.mem[128 + 2*5 + 2]));
@@ -580,8 +704,11 @@ module tb_model_bench;
     if (fd_csv != 0) begin
       $fdisplay(fd_csv, "workload,cycles,instructions,cpi,lat_us,macs,mops_50m,weighted_energy,sleep_cycles,accel_events,wakeups");
       write_csv_row(fd_csv, "cpu_mlp_4x4",      0,  1,  16, 0);
+      write_csv_row(fd_csv, "cpu_simd_4x4",    14, 15,  16, 0);
       write_csv_row(fd_csv, "npu_mlp_4x4",      2,  3,  16, 0);
+      write_csv_row(fd_csv, "npu_wide_8x8",    16, 17,  64, 0);
       write_csv_row(fd_csv, "npu_mlp_8x4x4_x4", 4,  5, 192, 0);
+      write_csv_row(fd_csv, "npu_tdma_mlp_x4", 18, 19, 192, 0);
       write_csv_row(fd_csv, "npu_sparse_2_4",   6,  7,   8, 0);
       write_csv_row(fd_csv, "dma_burst_16w",    8,  9,   0, 0);
       write_csv_row(fd_csv, "cordic_vec_mag",  10, 11,   0, 0);

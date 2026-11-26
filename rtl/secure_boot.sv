@@ -1,5 +1,6 @@
 module secure_boot #(
-  parameter integer WORDS = 4
+  parameter integer WORDS = 4,
+  parameter bit SYNC_SRAM = 1'b0
 ) (
   input logic clk,
   input logic reset,
@@ -25,6 +26,9 @@ module secure_boot #(
   logic [31:0] next_digest;
   logic [11:0] image_words;
   logic [11:0] boot_index;
+  logic [11:0] load_cnt;
+  logic sram_prime;
+  logic _unused_sync_sram;
   logic [3:0] block_word_idx;
   logic first_block;
   logic final_block;
@@ -44,6 +48,7 @@ module secure_boot #(
   logic [31:0] msg_bit_len;
   integer i;
 
+  assign _unused_sync_sram = &{1'b0, SYNC_SRAM};
   assign running = (sb_state != SB_IDLE);
   assign boot_addr = boot_index[7:0];
   assign boot_addr_hi = boot_index[10:8];
@@ -103,6 +108,8 @@ module secure_boot #(
       expected_digest <= 32'h0000_0000;
       image_words <= WORDS[11:0];
       boot_index <= 12'd0;
+      load_cnt <= 12'd0;
+      sram_prime <= 1'b0;
       block_word_idx <= 4'd0;
       first_block <= 1'b1;
       final_block <= 1'b0;
@@ -134,6 +141,8 @@ module secure_boot #(
                 fail <= 1'b0;
                 digest <= 32'h811c_9dc5;
                 boot_index <= 12'd0;
+                load_cnt <= 12'd0;
+                sram_prime <= SYNC_SRAM && csr_wdata[7];
                 block_word_idx <= 4'd0;
                 first_block <= 1'b1;
                 final_block <= 1'b0;
@@ -158,49 +167,56 @@ module secure_boot #(
       end
       case (sb_state)
         SB_LOAD: begin
-          digest <= next_digest;
-          sha_block[block_word_idx] <= boot_word;
-          if (boot_index + 12'd1 == image_words) begin
-            if (!mode_sha256) begin
-              sb_state <= SB_IDLE;
-              complete <= 1'b1;
-              if (next_digest == expected_digest) begin
-                boot_release <= 1'b1;
-                fail <= 1'b0;
-              end else begin
-                boot_release <= 1'b0;
-                fail <= 1'b1;
-              end
-            end else begin
-              sha_init <= first_block;
-              sha_start <= 1'b1;
-              sb_state <= SB_HASH;
-              if (block_word_idx <= 4'd13) begin
-                sha_block[block_word_idx + 4'd1] <= 32'h8000_0000;
-                sha_block[15] <= msg_bit_len;
-                final_block <= 1'b1;
-                pad_pending <= 1'b0;
-              end else if (block_word_idx == 4'd14) begin
-                sha_block[15] <= 32'h8000_0000;
-                final_block <= 1'b0;
-                pad_pending <= 1'b1;
-                need_80_in_pad <= 1'b0;
-              end else begin
-                final_block <= 1'b0;
-                pad_pending <= 1'b1;
-                need_80_in_pad <= 1'b1;
-              end
-            end
-          end else begin
+          if (sram_prime) begin
+            sram_prime <= 1'b0;
             boot_index <= boot_index + 12'd1;
-            if (mode_sha256 && block_word_idx == 4'd15) begin
-              sha_init <= first_block;
-              sha_start <= 1'b1;
-              final_block <= 1'b0;
-              pad_pending <= 1'b0;
-              sb_state <= SB_HASH;
+          end else begin
+            digest <= next_digest;
+            sha_block[block_word_idx] <= boot_word;
+            load_cnt <= load_cnt + 12'd1;
+            if (load_cnt + 12'd1 == image_words) begin
+              if (!mode_sha256) begin
+                sb_state <= SB_IDLE;
+                complete <= 1'b1;
+                if (next_digest == expected_digest) begin
+                  boot_release <= 1'b1;
+                  fail <= 1'b0;
+                end else begin
+                  boot_release <= 1'b0;
+                  fail <= 1'b1;
+                end
+              end else begin
+                sha_init <= first_block;
+                sha_start <= 1'b1;
+                sb_state <= SB_HASH;
+                if (block_word_idx <= 4'd13) begin
+                  sha_block[block_word_idx + 4'd1] <= 32'h8000_0000;
+                  sha_block[15] <= msg_bit_len;
+                  final_block <= 1'b1;
+                  pad_pending <= 1'b0;
+                end else if (block_word_idx == 4'd14) begin
+                  sha_block[15] <= 32'h8000_0000;
+                  final_block <= 1'b0;
+                  pad_pending <= 1'b1;
+                  need_80_in_pad <= 1'b0;
+                end else begin
+                  final_block <= 1'b0;
+                  pad_pending <= 1'b1;
+                  need_80_in_pad <= 1'b1;
+                end
+              end
             end else begin
-              block_word_idx <= block_word_idx + 4'd1;
+              if (mode_sha256 && block_word_idx == 4'd15) begin
+                boot_index <= load_cnt + 12'd1;
+                sha_init <= first_block;
+                sha_start <= 1'b1;
+                final_block <= 1'b0;
+                pad_pending <= 1'b0;
+                sb_state <= SB_HASH;
+              end else begin
+                boot_index <= boot_index + 12'd1;
+                block_word_idx <= block_word_idx + 4'd1;
+              end
             end
           end
         end
@@ -226,6 +242,7 @@ module secure_boot #(
               pad_pending <= 1'b0;
             end else begin
               block_word_idx <= 4'd0;
+              sram_prime <= SYNC_SRAM && src_sram;
               sb_state <= SB_LOAD;
             end
           end
