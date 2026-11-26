@@ -43,14 +43,14 @@ module orx1_soc #(
   logic wb_host_err;
 
   logic [1:0] grant_master;
-  logic [9:0] wb_s_cyc;
-  logic [9:0] wb_s_stb;
+  logic [10:0] wb_s_cyc;
+  logic [10:0] wb_s_stb;
   logic wb_s_we;
   logic [31:0] wb_s_adr;
   logic [31:0] wb_s_dat;
   logic [3:0] wb_s_sel;
-  logic [9:0] wb_s_ack;
-  logic [9:0] wb_s_err;
+  logic [10:0] wb_s_ack;
+  logic [10:0] wb_s_err;
 
   logic [31:0] rom_rdata;
   logic [31:0] sram_rdata;
@@ -63,6 +63,7 @@ module orx1_soc #(
   logic [31:0] timer_csr_rdata;
   logic [31:0] dma_csr_rdata;
   logic [31:0] cordic_csr_rdata;
+  logic [31:0] irq_csr_rdata;
 
   logic [31:0] cpu_cycles;
   logic [31:0] cpu_instructions;
@@ -136,14 +137,13 @@ module orx1_soc #(
   assign wb_s_err[0] = wb_s_cyc[0] && wb_s_stb[0] && wb_s_we && (grant_master != 2'd2);
   assign wb_s_ack[1] = sram_ack;
   assign wb_s_err[1] = 1'b0;
-  assign wb_s_ack[9:2] = wb_s_cyc[9:2] & wb_s_stb[9:2];
-  assign wb_s_err[9:2] = 8'd0;
+  assign wb_s_ack[10:2] = wb_s_cyc[10:2] & wb_s_stb[10:2];
+  assign wb_s_err[10:2] = 9'd0;
 
   assign sensor_bus_valid = sensor_valid | (wb_s_cyc[2] && wb_s_stb[2] && wb_s_we && wb_s_adr[7:0] == 8'h08);
   assign sensor_bus_data = sensor_valid ? sensor_data : wb_s_dat[15:0];
   assign boot_word = boot_rom[boot_addr];
   assign auto_infer_trigger = sensor_auto_infer & sensor_result_valid;
-  assign core_irq = sensor_irq | accelerator_irq | sensor_alert | uart_irq | dma_irq | cordic_irq;
 
   always_ff @(posedge clk) begin
     if (wb_s_cyc[0] && wb_s_stb[0] && wb_s_we && (grant_master == 2'd2)) begin
@@ -245,6 +245,7 @@ module orx1_soc #(
     .s7_dat_i(timer_csr_rdata),
     .s8_dat_i(dma_csr_rdata),
     .s9_dat_i(cordic_csr_rdata),
+    .s10_dat_i(irq_csr_rdata),
     .s_err_i(wb_s_err)
   );
 
@@ -338,5 +339,17 @@ module orx1_soc #(
     .csr_wdata(wb_s_dat),
     .csr_rdata(cordic_csr_rdata),
     .cordic_irq(cordic_irq)
+  );
+
+  irq_ctrl u_irq_ctrl (
+    .clk(clk),
+    .reset(reset),
+    .csr_valid(wb_s_cyc[10] && wb_s_stb[10]),
+    .csr_write(wb_s_we),
+    .csr_addr(wb_s_adr[7:0]),
+    .csr_wdata(wb_s_dat),
+    .csr_rdata(irq_csr_rdata),
+    .irq_sources({cordic_irq, dma_irq, uart_irq, sensor_alert, accelerator_irq, sensor_irq}),
+    .irq_out(core_irq)
   );
 endmodule

@@ -14,6 +14,7 @@ ORX-1 exposes peripherals through a single 32-bit memory-mapped data interface. 
 | System Timer | `0x40005000` | `0x100` | RISC-V 64-bit real-time counter and comparator |
 | Micro-DMA | `0x40006000` | `0x100` | Autonomous DMA memory engine |
 | CORDIC Coprocessor | `0x40007000` | `0x100` | 16-stage vector rotation and magnitude engine |
+| Interrupt Controller | `0x40008000` | `0x100` | Maskable external peripheral interrupt controller |
 
 ## Sensor pipeline
 
@@ -106,6 +107,14 @@ When `mtime >= mtimecmp`, the hardware timer asserts `timer_irq`, directly trigg
 | `0x10` | RO | 32-bit scaled magnitude output $\sqrt{X^2 + Y^2}$ |
 
 The 16-stage CORDIC engine performs polar-to-cartesian conversions and vector magnitude calculation using only shift and add operations without hardware multipliers.
+
+## Interrupt Controller (`irq_ctrl`)
+
+| Offset | Access | Meaning |
+|---:|:---:|---|
+| `0x00` | RO | Raw pending IRQ sources: Bit 0: sensor; Bit 1: accel; Bit 2: sensor alert; Bit 3: UART; Bit 4: DMA; Bit 5: CORDIC |
+| `0x04` | RW | Interrupt enable bitmask (resets to `0`) |
+| `0x08` | RO | Active masked IRQ status (`pending & enable`) |
 
 ## Energy monitor
 

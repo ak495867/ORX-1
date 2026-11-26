@@ -15,7 +15,7 @@ module tb_secure_boot;
   integer idx;
   integer wait_cnt;
   logic [31:0] expected_fnv;
-  logic [255:0] captured_sha;
+  logic [255:0] nist_sha256_16z;
 
   secure_boot dut (
     .clk(clk),
@@ -69,6 +69,7 @@ module tb_secure_boot;
     csr_wdata = 32'd0;
     boot_word = 32'd0;
     failures = 0;
+    nist_sha256_16z = 256'h374708ff_f7719dd5_979ec875_d56cd228_6f6d3cf7_ec317a3b_25632aab_28ec37bb;
     repeat (2) @(negedge clk);
     reset = 1'b0;
 
@@ -89,6 +90,7 @@ module tb_secure_boot;
     #1;
     if (!boot_release || fail) failures = failures + 1;
 
+    boot_word = 32'd0;
     write_csr(8'h00, 32'h21);
     wait_cnt = 0;
     status_val = 32'd0;
@@ -99,10 +101,9 @@ module tb_secure_boot;
     end
     if (!status_val[1] || !fail || boot_release) failures = failures + 1;
 
-    captured_sha = dut.sha_digest;
     for (idx = 0; idx < 8; idx = idx + 1) begin
       write_csr(8'h0c, idx[31:0]);
-      write_csr(8'h10, captured_sha[idx*32 +: 32]);
+      write_csr(8'h10, nist_sha256_16z[idx*32 +: 32]);
     end
     write_csr(8'h00, 32'h21);
     wait_cnt = 0;

@@ -14,6 +14,7 @@
     "dir::../rtl/energy_monitor.sv",
     "dir::../rtl/wb_interconnect.sv",
     "dir::../rtl/cordic_engine.sv",
+    "dir::../rtl/irq_ctrl.sv",
     "dir::../rtl/orx1_soc.sv"
   ],
   "CLOCK_PORT": "clk",

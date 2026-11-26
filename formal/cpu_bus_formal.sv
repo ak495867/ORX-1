@@ -71,10 +71,10 @@ module cpu_bus_formal (
       if ($past(trap)) begin
         assert (trap);
       end
-      assert (perf_cycles >= $past(perf_cycles));
-      assert (perf_instructions >= $past(perf_instructions));
-      assert (perf_bus_requests >= $past(perf_bus_requests));
-      assert (perf_wait_cycles >= $past(perf_wait_cycles));
+      assert (perf_cycles == $past(perf_cycles) + 32'd1);
+      assert (perf_instructions == $past(perf_instructions) || perf_instructions == $past(perf_instructions) + 32'd1);
+      assert (perf_bus_requests == $past(perf_bus_requests) || perf_bus_requests == $past(perf_bus_requests) + 32'd1);
+      assert (perf_wait_cycles == $past(perf_wait_cycles) || perf_wait_cycles == $past(perf_wait_cycles) + 32'd1);
     end
   end
 endmodule

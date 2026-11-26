@@ -44,6 +44,10 @@ module tb_firmware;
     enc_i = {imm12[11:0], rs1[4:0], funct3[2:0], rd[4:0], opcode[6:0]};
   endfunction
 
+  function automatic [31:0] enc_r(input integer funct7, input integer rs2, input integer rs1, input integer funct3, input integer rd);
+    enc_r = {funct7[6:0], rs2[4:0], rs1[4:0], funct3[2:0], rd[4:0], 7'b0110011};
+  endfunction
+
   function automatic [31:0] enc_s(input integer imm12, input integer rs2, input integer rs1, input integer funct3);
     enc_s = {imm12[11:5], rs2[4:0], rs1[4:0], funct3[2:0], imm12[4:0], 7'b0100011};
   endfunction
@@ -76,6 +80,7 @@ module tb_firmware;
   logic [31:0] host_val;
 
   initial begin
+    @(negedge clk);
     dut.boot_rom[0]  = enc_u(32'h00010, 1, 7'b0110111);
     dut.boot_rom[1]  = enc_u(32'h40006, 2, 7'b0110111);
     dut.boot_rom[2]  = enc_u(32'h40001, 3, 7'b0110111);
@@ -141,11 +146,22 @@ module tb_firmware;
     dut.boot_rom[56] = enc_i(16, 6, 3'b010, 7, 7'b0000011);
     dut.boot_rom[57] = enc_s(140, 7, 1, 3'b010);
 
-    dut.boot_rom[58] = enc_u(32'h12345, 7, 7'b0110111);
-    dut.boot_rom[59] = enc_i(1656, 7, 3'b000, 7, 7'b0010011);
-    dut.boot_rom[60] = enc_s(252, 7, 1, 3'b010);
-    dut.boot_rom[61] = 32'h1050_0073;
-    dut.boot_rom[62] = 32'hffdff06f;
+    dut.boot_rom[58] = 32'h0000_000f;
+    dut.boot_rom[59] = enc_i(-32, 0, 3'b000, 7, 7'b0010011);
+    dut.boot_rom[60] = enc_i(1026, 7, 3'b101, 7, 7'b0010011);
+    dut.boot_rom[61] = enc_s(144, 7, 1, 3'b010);
+    dut.boot_rom[62] = enc_i(-7, 0, 3'b000, 8, 7'b0010011);
+    dut.boot_rom[63] = enc_i(6, 0, 3'b000, 9, 7'b0010011);
+    dut.boot_rom[64] = enc_r(7'b0000001, 9, 8, 3'b000, 7);
+    dut.boot_rom[65] = enc_s(148, 7, 1, 3'b010);
+    dut.boot_rom[66] = enc_r(7'b0000001, 9, 7, 3'b110, 7);
+    dut.boot_rom[67] = enc_s(152, 7, 1, 3'b010);
+
+    dut.boot_rom[68] = enc_u(32'h12345, 7, 7'b0110111);
+    dut.boot_rom[69] = enc_i(1656, 7, 3'b000, 7, 7'b0010011);
+    dut.boot_rom[70] = enc_s(252, 7, 1, 3'b010);
+    dut.boot_rom[71] = 32'h1050_0073;
+    dut.boot_rom[72] = 32'hffdff06f;
 
     repeat (3) @(negedge clk);
     reset = 1'b0;
@@ -162,6 +178,9 @@ module tb_firmware;
     if (dut.u_sram.mem[33] != 32'd0) failures = failures + 1;
     if (dut.u_sram.mem[34] < 32'd495 || dut.u_sram.mem[34] > 32'd505) failures = failures + 1;
     if (dut.u_sram.mem[35] == 32'd0) failures = failures + 1;
+    if ($signed(dut.u_sram.mem[36]) != -32'sd8) failures = failures + 1;
+    if ($signed(dut.u_sram.mem[37]) != -32'sd42) failures = failures + 1;
+    if (dut.u_sram.mem[38] != 32'd0) failures = failures + 1;
 
     wb_read(32'h0001_00fc, host_val);
     if (host_val != 32'h1234_5678) failures = failures + 1;

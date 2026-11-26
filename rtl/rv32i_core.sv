@@ -60,8 +60,11 @@ module rv32i_core #(
   logic [31:0] imm_u;
   logic [31:0] imm_j;
   logic [31:0] effective_addr;
+  logic [31:0] jal_target;
+  logic [31:0] jalr_target;
   logic [31:0] rs1_value;
   logic [31:0] rs2_value;
+  logic mem_misaligned;
   integer index;
 
   logic [31:0] csr_mstatus;
@@ -93,6 +96,10 @@ module rv32i_core #(
   assign imm_u = {imem_rdata[31:12], 12'd0};
   assign imm_j = {{11{imem_rdata[31]}}, imem_rdata[31], imem_rdata[19:12], imem_rdata[20], imem_rdata[30:21], 1'b0};
   assign effective_addr = rs1_value + ((opcode == OP_LOAD) ? imm_i : imm_s);
+  assign jal_target = pc + imm_j;
+  assign jalr_target = (rs1_value + imm_i) & 32'hffff_fffe;
+  assign mem_misaligned = ((funct3 == 3'b001 || funct3 == 3'b101) && effective_addr[0]) ||
+                          ((funct3 == 3'b010) && (effective_addr[1:0] != 2'b00));
 
   assign req_valid = (state == MEM_REQUEST);
   assign req_write = mem_write_q;
@@ -180,35 +187,75 @@ module rv32i_core #(
             pc <= csr_mtvec;
             state <= FETCH;
           end else if (opcode == OP_LOAD || opcode == OP_STORE) begin
-            mem_addr_q <= effective_addr;
-            mem_wdata_q <= rs2_value << (8 * effective_addr[1:0]);
-            mem_write_q <= (opcode == OP_STORE);
-            mem_is_load_q <= (opcode == OP_LOAD);
-            mem_funct3_q <= funct3;
-            mem_rd_q <= rd;
-            state <= MEM_REQUEST;
-            case (funct3)
-              3'b000: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0001 << effective_addr[1:0]) : 4'b0000;
-              3'b001: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0011 << effective_addr[1:0]) : 4'b0000;
-              3'b010: mem_wstrb_q <= (opcode == OP_STORE) ? 4'b1111 : 4'b0000;
-              3'b100: begin
-                if (opcode == OP_LOAD) mem_wstrb_q <= 4'b0000;
-                else begin mem_wstrb_q <= 4'b0000; trap <= 1'b1; state <= TRAP; end
+            if (mem_misaligned ||
+                (opcode == OP_STORE && (funct3 == 3'b100 || funct3 == 3'b101 || funct3[2:0] > 3'b010)) ||
+                (opcode == OP_LOAD && (funct3 == 3'b011 || funct3 == 3'b110 || funct3 == 3'b111))) begin
+              if (mem_misaligned && csr_mtvec != 32'd0) begin
+                csr_mepc <= pc;
+                csr_mcause <= (opcode == OP_STORE) ? 32'd6 : 32'd4;
+                csr_mstatus[7] <= csr_mstatus[3];
+                csr_mstatus[3] <= 1'b0;
+                pc <= csr_mtvec;
+                state <= FETCH;
+              end else begin
+                trap <= 1'b1;
+                state <= TRAP;
               end
-              3'b101: begin
-                if (opcode == OP_LOAD) mem_wstrb_q <= 4'b0000;
-                else begin mem_wstrb_q <= 4'b0000; trap <= 1'b1; state <= TRAP; end
-              end
-              default: begin mem_wstrb_q <= 4'b0000; trap <= 1'b1; state <= TRAP; end
-            endcase
+            end else begin
+              mem_addr_q <= effective_addr;
+              mem_wdata_q <= rs2_value << (8 * effective_addr[1:0]);
+              mem_write_q <= (opcode == OP_STORE);
+              mem_is_load_q <= (opcode == OP_LOAD);
+              mem_funct3_q <= funct3;
+              mem_rd_q <= rd;
+              state <= MEM_REQUEST;
+              case (funct3)
+                3'b000: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0001 << effective_addr[1:0]) : 4'b0000;
+                3'b001: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0011 << effective_addr[1:0]) : 4'b0000;
+                3'b010: mem_wstrb_q <= (opcode == OP_STORE) ? 4'b1111 : 4'b0000;
+                default: mem_wstrb_q <= 4'b0000;
+              endcase
+            end
           end else begin
             perf_instructions <= perf_instructions + 32'd1;
             if (opcode == OP_BRANCH) perf_branches <= perf_branches + 32'd1;
             case (opcode)
               OP_LUI: begin if (rd != 5'd0) regs[rd] <= imm_u; pc <= pc + 32'd4; end
               OP_AUIPC: begin if (rd != 5'd0) regs[rd] <= pc + imm_u; pc <= pc + 32'd4; end
-              OP_JAL: begin if (rd != 5'd0) regs[rd] <= pc + 32'd4; pc <= pc + imm_j; end
-              OP_JALR: begin if (rd != 5'd0) regs[rd] <= pc + 32'd4; pc <= (rs1_value + imm_i) & 32'hffff_fffe; end
+              OP_JAL: begin
+                if (jal_target[1] != 1'b0) begin
+                  if (csr_mtvec != 32'd0) begin
+                    csr_mepc <= pc;
+                    csr_mcause <= 32'd0;
+                    csr_mstatus[7] <= csr_mstatus[3];
+                    csr_mstatus[3] <= 1'b0;
+                    pc <= csr_mtvec;
+                  end else begin
+                    trap <= 1'b1;
+                    state <= TRAP;
+                  end
+                end else begin
+                  if (rd != 5'd0) regs[rd] <= pc + 32'd4;
+                  pc <= jal_target;
+                end
+              end
+              OP_JALR: begin
+                if (jalr_target[1] != 1'b0) begin
+                  if (csr_mtvec != 32'd0) begin
+                    csr_mepc <= pc;
+                    csr_mcause <= 32'd0;
+                    csr_mstatus[7] <= csr_mstatus[3];
+                    csr_mstatus[3] <= 1'b0;
+                    pc <= csr_mtvec;
+                  end else begin
+                    trap <= 1'b1;
+                    state <= TRAP;
+                  end
+                end else begin
+                  if (rd != 5'd0) regs[rd] <= pc + 32'd4;
+                  pc <= jalr_target;
+                end
+              end
               OP_BRANCH: begin
                 case (funct3)
                   3'b000: pc <= (rs1_value == rs2_value) ? pc + imm_b : pc + 32'd4;
@@ -238,8 +285,11 @@ module rv32i_core #(
                     end
                   end
                   3'b101: begin
-                    if (funct7 == 7'b0000000 || funct7 == 7'b0100000) begin
-                      if (rd != 5'd0) regs[rd] <= (funct7[5]) ? $signed(rs1_value) >>> imem_rdata[24:20] : rs1_value >> imem_rdata[24:20];
+                    if (funct7 == 7'b0000000) begin
+                      if (rd != 5'd0) regs[rd] <= rs1_value >> imem_rdata[24:20];
+                      pc <= pc + 32'd4;
+                    end else if (funct7 == 7'b0100000) begin
+                      if (rd != 5'd0) regs[rd] <= $signed(rs1_value) >>> imem_rdata[24:20];
                       pc <= pc + 32'd4;
                     end else begin
                       trap <= 1'b1;
@@ -341,8 +391,19 @@ module rv32i_core #(
           if (req_ready) begin
             perf_bus_requests <= perf_bus_requests + 32'd1;
             if (rsp_valid) begin
-              if (rsp_err) begin trap <= 1'b1; state <= TRAP; end
-              else begin
+              if (rsp_err) begin
+                if (csr_mtvec != 32'd0) begin
+                  csr_mepc <= pc;
+                  csr_mcause <= mem_is_load_q ? 32'd5 : 32'd7;
+                  csr_mstatus[7] <= csr_mstatus[3];
+                  csr_mstatus[3] <= 1'b0;
+                  pc <= csr_mtvec;
+                  state <= FETCH;
+                end else begin
+                  trap <= 1'b1;
+                  state <= TRAP;
+                end
+              end else begin
                 perf_instructions <= perf_instructions + 32'd1;
                 if (mem_is_load_q) perf_loads <= perf_loads + 32'd1;
                 else perf_stores <= perf_stores + 32'd1;
@@ -356,15 +417,26 @@ module rv32i_core #(
         MEM_WAIT: begin
           perf_wait_cycles <= perf_wait_cycles + 32'd1;
           if (rsp_valid) begin
-            if (rsp_err) trap <= 1'b1;
-            else begin
+            if (rsp_err) begin
+              if (csr_mtvec != 32'd0) begin
+                csr_mepc <= pc;
+                csr_mcause <= mem_is_load_q ? 32'd5 : 32'd7;
+                csr_mstatus[7] <= csr_mstatus[3];
+                csr_mstatus[3] <= 1'b0;
+                pc <= csr_mtvec;
+                state <= FETCH;
+              end else begin
+                trap <= 1'b1;
+                state <= TRAP;
+              end
+            end else begin
               perf_instructions <= perf_instructions + 32'd1;
               if (mem_is_load_q) perf_loads <= perf_loads + 32'd1;
               else perf_stores <= perf_stores + 32'd1;
               if (mem_is_load_q && mem_rd_q != 5'd0) regs[mem_rd_q] <= load_extend(rsp_rdata, mem_funct3_q, mem_addr_q[1:0]);
+              pc <= pc + 32'd4;
+              state <= FETCH;
             end
-            if (rsp_err) state <= TRAP;
-            else begin pc <= pc + 32'd4; state <= FETCH; end
           end
         end
         WFI_WAIT: begin

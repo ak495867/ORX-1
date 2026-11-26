@@ -90,6 +90,7 @@ module dma_ctrl (
       end
 
       case (state)
+        DMA_IDLE: begin end
         DMA_READ: begin
           if (dma_req_ready && dma_rsp_valid) begin
             hold_data <= dma_rsp_rdata;

@@ -267,6 +267,26 @@ module neural_accel (
           result[0], bias[0], shift_amt,
           cfg_accum, cfg_relu, cfg_bias, cfg_sparse
         );
+        if (cfg_matrix) begin
+          result[1] <= compute_mac_row(
+            auto_infer_sample[7:0], auto_infer_sample[15:8], activation[2], activation[3],
+            weight[1][0], weight[1][1], weight[1][2], weight[1][3],
+            result[1], bias[1], shift_amt,
+            cfg_accum, cfg_relu, cfg_bias, cfg_sparse
+          );
+          result[2] <= compute_mac_row(
+            auto_infer_sample[7:0], auto_infer_sample[15:8], activation[2], activation[3],
+            weight[2][0], weight[2][1], weight[2][2], weight[2][3],
+            result[2], bias[2], shift_amt,
+            cfg_accum, cfg_relu, cfg_bias, cfg_sparse
+          );
+          result[3] <= compute_mac_row(
+            auto_infer_sample[7:0], auto_infer_sample[15:8], activation[2], activation[3],
+            weight[3][0], weight[3][1], weight[3][2], weight[3][3],
+            result[3], bias[3], shift_amt,
+            cfg_accum, cfg_relu, cfg_bias, cfg_sparse
+          );
+        end
         busy <= 1'b1;
       end
       if (busy) begin

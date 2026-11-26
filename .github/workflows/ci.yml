@@ -25,6 +25,8 @@ jobs:
           sudo chmod +x /usr/local/bin/sby
       - name: Check executable scripts
         run: test -x scripts/check_rtl.sh && test -x scripts/run_sim.sh
+      - name: Run C TinyML tests
+        run: make test-sw
       - name: Run simulation
         run: make sim
       - name: Run CPU benchmark

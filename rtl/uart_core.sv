@@ -74,34 +74,6 @@ module uart_core (
       rx_sync_0 <= rx;
       rx_sync_1 <= rx_sync_0;
 
-      if (csr_valid && csr_write) begin
-        case (csr_addr)
-          8'h00: begin
-            if (!tx_busy) begin
-              tx_data <= csr_wdata[7:0];
-              tx_shift <= csr_wdata[7:0];
-              tx_div_count <= 16'd0;
-              tx_bit_index <= 3'd0;
-              tx_busy <= 1'b1;
-              tx_done <= 1'b0;
-              tx <= 1'b0;
-              tx_state <= TX_START;
-            end
-          end
-          8'h08: baud_div <= csr_wdata[15:0];
-          8'h0c: begin
-            if (csr_wdata[0]) rx_valid <= 1'b0;
-            if (csr_wdata[1]) rx_overrun <= 1'b0;
-            if (csr_wdata[2]) tx_done <= 1'b0;
-          end
-          8'h10: begin
-            rx_irq_en <= csr_wdata[0];
-            tx_irq_en <= csr_wdata[1];
-          end
-          default: begin end
-        endcase
-      end
-
       case (tx_state)
         TX_IDLE: begin
           tx <= 1'b1;
@@ -146,6 +118,34 @@ module uart_core (
         end
         default: tx_state <= TX_IDLE;
       endcase
+
+      if (csr_valid && csr_write) begin
+        case (csr_addr)
+          8'h00: begin
+            if (!tx_busy) begin
+              tx_data <= csr_wdata[7:0];
+              tx_shift <= csr_wdata[7:0];
+              tx_div_count <= 16'd0;
+              tx_bit_index <= 3'd0;
+              tx_busy <= 1'b1;
+              tx_done <= 1'b0;
+              tx <= 1'b0;
+              tx_state <= TX_START;
+            end
+          end
+          8'h08: baud_div <= csr_wdata[15:0];
+          8'h0c: begin
+            if (csr_wdata[0]) rx_valid <= 1'b0;
+            if (csr_wdata[1]) rx_overrun <= 1'b0;
+            if (csr_wdata[2]) tx_done <= 1'b0;
+          end
+          8'h10: begin
+            rx_irq_en <= csr_wdata[0];
+            tx_irq_en <= csr_wdata[1];
+          end
+          default: begin end
+        endcase
+      end
 
       case (rx_state)
         RX_IDLE: begin

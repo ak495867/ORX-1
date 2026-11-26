@@ -24,6 +24,7 @@ module secure_boot #(
   localparam logic [2:0] LAST_INDEX = WORDS - 3'd1;
 
   logic mode_sha256;
+  logic sha_init;
   logic sha_start;
   logic sha_done;
   logic [255:0] sha_digest;
@@ -45,7 +46,7 @@ module secure_boot #(
   sha256_engine u_sha256 (
     .clk(clk),
     .reset(reset),
-    .init(1'b0),
+    .init(sha_init),
     .start(sha_start),
     .block_data(sha_block_flat),
     .done(sha_done),
@@ -77,11 +78,13 @@ module secure_boot #(
       expected_digest <= 32'h0000_0000;
       boot_index <= 3'd0;
       mode_sha256 <= 1'b0;
+      sha_init <= 1'b0;
       sha_start <= 1'b0;
       efuse_idx <= 3'd0;
       for (i = 0; i < 8; i = i + 1) efuse_hash[i] <= 32'd0;
       for (i = 0; i < 16; i = i + 1) sha_block[i] <= 32'd0;
     end else begin
+      sha_init <= 1'b0;
       sha_start <= 1'b0;
       if (csr_valid && csr_write) begin
         case (csr_addr)
@@ -91,6 +94,7 @@ module secure_boot #(
               mode_sha256 <= csr_wdata[5];
               if (csr_wdata[0]) begin
                 sb_state <= SB_LOAD;
+                sha_init <= csr_wdata[5];
                 complete <= 1'b0;
                 boot_release <= 1'b0;
                 fail <= 1'b0;

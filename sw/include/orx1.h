@@ -3,7 +3,12 @@
 
 #include <stdint.h>
 
+#ifdef ORX1_HOST_TEST
+extern volatile uint32_t *orx1_host_reg(uint32_t addr);
+#define REG32(addr) (*orx1_host_reg((uint32_t)(addr)))
+#else
 #define REG32(addr) (*(volatile uint32_t *)(uintptr_t)(addr))
+#endif
 
 #define ORX1_BOOT_BASE     0x00000000
 #define ORX1_SRAM_BASE     0x00010000
@@ -15,6 +20,7 @@
 #define ORX1_TIMER_BASE    0x40005000
 #define ORX1_DMA_BASE      0x40006000
 #define ORX1_CORDIC_BASE   0x40007000
+#define ORX1_IRQ_BASE      0x40008000
 
 #define SENSOR_CTRL        REG32(ORX1_SENSOR_BASE + 0x00)
 #define SENSOR_IRQ         REG32(ORX1_SENSOR_BASE + 0x04)
@@ -65,6 +71,7 @@
 #define UART_STATUS        REG32(ORX1_UART_BASE + 0x04)
 #define UART_BAUD          REG32(ORX1_UART_BASE + 0x08)
 #define UART_CLEAR         REG32(ORX1_UART_BASE + 0x0C)
+#define UART_IRQ_EN        REG32(ORX1_UART_BASE + 0x10)
 
 #define ENERGY_CYCLES      REG32(ORX1_ENERGY_BASE + 0x00)
 #define ENERGY_SENSOR      REG32(ORX1_ENERGY_BASE + 0x04)
@@ -95,6 +102,10 @@
 #define CORDIC_Y           REG32(ORX1_CORDIC_BASE + 0x08)
 #define CORDIC_Z           REG32(ORX1_CORDIC_BASE + 0x0C)
 #define CORDIC_MAG         REG32(ORX1_CORDIC_BASE + 0x10)
+
+#define IRQ_PENDING        REG32(ORX1_IRQ_BASE + 0x00)
+#define IRQ_ENABLE         REG32(ORX1_IRQ_BASE + 0x04)
+#define IRQ_STATUS         REG32(ORX1_IRQ_BASE + 0x08)
 
 static inline int32_t cordic_vector_magnitude(int16_t x, int16_t y) {
   CORDIC_X = (int32_t)x;
