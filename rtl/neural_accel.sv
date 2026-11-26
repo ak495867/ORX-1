@@ -107,7 +107,7 @@ module neural_accel (
 
     csr_rdata = 32'd0;
     case (csr_addr)
-      8'h00: csr_rdata = {22'd0, cfg_thresh_irq, cfg_clamp, cfg_sparse, cfg_matrix, cfg_bias, cfg_relu, cfg_accum, done, busy};
+      8'h00: csr_rdata = {22'd0, cfg_thresh_irq, cfg_clamp, cfg_sparse, 1'b0, cfg_matrix, cfg_bias, cfg_relu, cfg_accum, done, busy};
       8'h04: csr_rdata = result[0];
       8'h08: csr_rdata = bias[0];
       8'h0c: csr_rdata = {27'd0, shift_amt};

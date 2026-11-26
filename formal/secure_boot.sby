@@ -1,0 +1,16 @@
+[options]
+mode bmc
+depth 24
+multiclock off
+
+[engines]
+smtbmc z3
+
+[script]
+read_verilog -formal -sv sha256_engine.sv secure_boot.sv secure_boot_formal.sv
+prep -top secure_boot_formal
+
+[files]
+rtl/sha256_engine.sv
+rtl/secure_boot.sv
+formal/secure_boot_formal.sv

@@ -5,5 +5,7 @@ build/
 .verilator/
 formal/cpu_bus/
 formal/wb_xbar/
+formal/neural_accel/
+formal/secure_boot/
 *.smt2
 .DS_Store

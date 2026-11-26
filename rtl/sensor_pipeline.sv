@@ -27,6 +27,9 @@ module sensor_pipeline #(
   logic signed [WIDTH+1:0] pred_sample;
   logic signed [WIDTH+1:0] pred_delta;
   logic [WIDTH-1:0] abs_delta;
+  logic _unused_sum_lsb;
+
+  assign _unused_sum_lsb = &{1'b0, next_sum[1:0], next_sum_2[0]};
 
   assign pred_sample = ($signed({2'd0, samples[3]}) <<< 1) - $signed({2'd0, samples[2]});
   assign pred_delta = $signed({2'd0, sample_data}) - pred_sample;

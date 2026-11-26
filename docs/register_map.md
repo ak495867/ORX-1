@@ -53,12 +53,13 @@ ORX-1 exposes peripherals through a single 32-bit memory-mapped data interface. 
 
 | Offset | Access | Meaning |
 |---:|:---:|---|
-| `0x00` | RW or RO | Bit 0: start; Bit 1: clear complete; Bit 2: complete; Bit 3: boot release; Bit 4: failure; Bit 5: SHA-256 mode; Bit 6: sticky eFuse lock |
+| `0x00` | RW or RO | Write Bit 0: start; Bit 1: clear complete; Bit 5: SHA-256 mode; Bit 6: sticky eFuse lock; Bit 7: SRAM image source (`0` = Boot ROM, `1` = SRAM). Read Bit 0: running; Bit 1: complete; Bit 2: boot release; Bit 3: failure; Bit 4: SHA-256 mode; Bit 5: eFuse lock; Bit 7: SRAM image source |
 | `0x04` | RO | Current rolling digest (FNV-1a or lower word of SHA-256) |
 | `0x08` | RW | Expected digest lower word |
-| `0x0c` | RW | eFuse word index (0..7) |
+| `0x0c` | RW | eFuse / digest word index (0..7) |
 | `0x10` | RW | eFuse 32-bit data word at selected index (ignored when locked) |
-| `0x14` | RW | Image word count (`1..256`, defaults to `WORDS`) |
+| `0x14` | RW | Image word count (`1..2048`, defaults to `WORDS`) |
+| `0x18` | RO | SHA-256 digest word at selected index `0..7` (`efuse_idx`) |
 
 ## UART core (Full-Duplex with 8-byte FIFOs)
 
@@ -129,7 +130,7 @@ ORX-1 exposes peripherals through a single 32-bit memory-mapped data interface. 
 
 | Offset | Access | Meaning |
 |---:|:---:|---|
-| `0x00` | RW | Bit 0: CPU hold reset (host-writable); Bit 1: hardware boot-gate enable (host-writable); Bit 2: WDT reset occurred flag (W1C) |
+| `0x00` | RW | Bit 0: CPU hold reset (host-writable); Bit 1: hardware boot-gate enable (host-writable); Bit 2: WDT reset occurred flag (W1C); Bit 3: Wishbone host unmapped/error flag (W1C) |
 | `0x04` | RW | Watchdog countdown reload value |
 | `0x08` | RW | Bit 0: enable WDT; Bit 1 (WO): kick/reload counter |
 | `0x0c` | RO | Current watchdog countdown value |
@@ -152,5 +153,5 @@ ORX-1 exposes peripherals through a single 32-bit memory-mapped data interface. 
 
 The core implements the **RV32I** integer base ISA along with:
 * **RV32M Standard Extension:** Shared 33x33 multiplier (`MUL`, `MULH`, `MULHSU`, `MULHU`) and 32-cycle sequential restoring divider (`DIV`, `DIVU`, `REM`, `REMU`).
-* **Machine-Mode CSRs:** `mstatus`, `mie`, `mtvec`, `mepc`, `mcause`, `mip`, `mcycle`, `minstret`.
-* **Privileged & Exception Handling:** `WFI` (Wait-For-Interrupt with `core_sleep`), `MRET`, `ECALL`, `EBREAK`, `FENCE`, and misaligned/bus-fault vectoring.
+* **Machine-Mode CSRs:** `mstatus` (`0x300`), `misa` (`0x301` = `0x40001100`), `mie` (`0x304`), `mtvec` (`0x305`), `mepc` (`0x341`), `mcause` (`0x342`), `mip` (`0x344`), 64-bit `mcycle`/`mcycleh` (`0xb00`/`0xb80` & `0xc00`/`0xc80`), `minstret`/`minstreth` (`0xb02`/`0xb82` & `0xc02`/`0xc82`), and `mhartid` (`0xf14`).
+* **Privileged & Exception Handling:** `WFI` (Wait-For-Interrupt with `core_sleep`), `MRET`, `ECALL`, `EBREAK`, `FENCE`, and synchronous exception trapping (`mcause = 0, 2, 3, 4, 5, 6, 7, 11` via `mtvec`, halting in `TRAP` only if `mtvec == 0`).

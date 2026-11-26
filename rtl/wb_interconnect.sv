@@ -132,20 +132,20 @@ module wb_interconnect (
   always_comb begin
     slave_sel = 14'b0;
     if (g_cyc && g_stb) begin
-      if (g_adr >= `ORX1_BOOT_BASE && g_adr <= `ORX1_BOOT_LAST) slave_sel[0] = 1'b1;
-      else if (g_adr >= `ORX1_SRAM_BASE && g_adr <= `ORX1_SRAM_LAST) slave_sel[1] = 1'b1;
-      else if (g_adr >= `ORX1_SENSOR_BASE && g_adr < `ORX1_SENSOR_BASE + `ORX1_REGION_SIZE) slave_sel[2] = 1'b1;
-      else if (g_adr >= `ORX1_ACCEL_BASE && g_adr < `ORX1_ACCEL_BASE + `ORX1_REGION_SIZE) slave_sel[3] = 1'b1;
-      else if (g_adr >= `ORX1_BOOTCTRL_BASE && g_adr < `ORX1_BOOTCTRL_BASE + `ORX1_REGION_SIZE) slave_sel[4] = 1'b1;
-      else if (g_adr >= `ORX1_UART_BASE && g_adr < `ORX1_UART_BASE + `ORX1_REGION_SIZE) slave_sel[5] = 1'b1;
-      else if (g_adr >= `ORX1_ENERGY_BASE && g_adr < `ORX1_ENERGY_BASE + `ORX1_REGION_SIZE) slave_sel[6] = 1'b1;
-      else if (g_adr >= `ORX1_TIMER_BASE && g_adr < `ORX1_TIMER_BASE + `ORX1_REGION_SIZE) slave_sel[7] = 1'b1;
-      else if (g_adr >= `ORX1_DMA_BASE && g_adr < `ORX1_DMA_BASE + `ORX1_REGION_SIZE) slave_sel[8] = 1'b1;
-      else if (g_adr >= `ORX1_CORDIC_BASE && g_adr < `ORX1_CORDIC_BASE + `ORX1_REGION_SIZE) slave_sel[9] = 1'b1;
-      else if (g_adr >= `ORX1_IRQ_BASE && g_adr < `ORX1_IRQ_BASE + `ORX1_REGION_SIZE) slave_sel[10] = 1'b1;
-      else if (g_adr >= `ORX1_GPIO_BASE && g_adr < `ORX1_GPIO_BASE + `ORX1_REGION_SIZE) slave_sel[11] = 1'b1;
-      else if (g_adr >= `ORX1_SPI_BASE && g_adr < `ORX1_SPI_BASE + `ORX1_REGION_SIZE) slave_sel[12] = 1'b1;
-      else if (g_adr >= `ORX1_SYS_BASE && g_adr < `ORX1_SYS_BASE + `ORX1_REGION_SIZE) slave_sel[13] = 1'b1;
+      if (g_adr[31:10] == orx1_pkg::BOOT_BASE[31:10]) slave_sel[0] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::SRAM_BASE, orx1_pkg::SRAM_LAST)) slave_sel[1] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::SENSOR_BASE, orx1_pkg::SENSOR_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[2] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::ACCEL_BASE, orx1_pkg::ACCEL_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[3] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::BOOTCTRL_BASE, orx1_pkg::BOOTCTRL_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[4] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::UART_BASE, orx1_pkg::UART_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[5] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::ENERGY_BASE, orx1_pkg::ENERGY_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[6] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::TIMER_BASE, orx1_pkg::TIMER_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[7] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::DMA_BASE, orx1_pkg::DMA_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[8] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::CORDIC_BASE, orx1_pkg::CORDIC_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[9] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::IRQ_BASE, orx1_pkg::IRQ_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[10] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::GPIO_BASE, orx1_pkg::GPIO_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[11] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::SPI_BASE, orx1_pkg::SPI_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[12] = 1'b1;
+      else if (orx1_pkg::in_range(g_adr, orx1_pkg::SYS_BASE, orx1_pkg::SYS_BASE + orx1_pkg::REGION_SIZE - 32'd1)) slave_sel[13] = 1'b1;
     end
   end
 

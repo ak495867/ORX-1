@@ -50,6 +50,9 @@ module uart_core (
   logic rx_push;
   logic rx_pop;
   logic rx_flush;
+  logic _unused_wdata;
+
+  assign _unused_wdata = &{1'b0, csr_wdata[31:16]};
 
   assign tx_full = (tx_count == 4'd8);
   assign tx_empty = (tx_count == 4'd0);

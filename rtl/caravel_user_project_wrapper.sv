@@ -95,7 +95,10 @@ module caravel_user_project_wrapper (
   assign la_data_out[21:6] = sensor_result;
   assign la_data_out[22] = core_sleep;
   assign la_data_out[26:23] = gpio_out[15:12];
-  assign la_data_out[127:27] = 101'd0;
+  assign la_data_out[30:27] = gpio_oe[15:12];
+  assign la_data_out[127:31] = 97'd0;
+  logic _unused_caravel;
+  assign _unused_caravel = &{1'b0, la_data_in[127:1], la_oenb[127:1], io_in[25], io_in[23:19], io_in[1]};
 
   orx1_soc u_soc (
     .clk(clk),

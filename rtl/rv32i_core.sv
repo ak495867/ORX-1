@@ -73,6 +73,8 @@ module rv32i_core #(
   logic [31:0] csr_mtvec;
   logic [31:0] csr_mepc;
   logic [31:0] csr_mcause;
+  logic [63:0] cycle64;
+  logic [63:0] instret64;
   logic [11:0] csr_addr;
   logic [31:0] csr_rdata;
   logic [31:0] csr_wdata;
@@ -86,6 +88,7 @@ module rv32i_core #(
   logic signed [32:0] mul_a;
   logic signed [32:0] mul_b;
   logic signed [65:0] mul_prod;
+  logic _unused_mul_hi;
 
   logic [5:0] div_cnt;
   logic [31:0] div_quotient;
@@ -129,6 +132,7 @@ module rv32i_core #(
   assign req_addr = mem_addr_q;
   assign req_wdata = mem_wdata_q;
   assign req_wstrb = mem_wstrb_q;
+  assign trap = (state == TRAP);
   assign core_sleep = (state == WFI_WAIT);
 
   assign irq_ext_en = irq_external && csr_mie[11];
@@ -141,6 +145,7 @@ module rv32i_core #(
   assign mul_a = $signed({mul_sign_a & rs1_value[31], rs1_value});
   assign mul_b = $signed({mul_sign_b & rs2_value[31], rs2_value});
   assign mul_prod = mul_a * mul_b;
+  assign _unused_mul_hi = &{1'b0, mul_prod[65:64]};
 
   assign div_signed_op = !funct3[0];
   assign div_abs_rs1 = (div_signed_op && rs1_value[31]) ? (~rs1_value + 32'd1) : rs1_value;
@@ -151,17 +156,28 @@ module rv32i_core #(
   assign div_raw_res = div_is_rem ? div_next_rem : div_next_quot;
   assign div_final_res = div_neg_res ? (~div_raw_res + 32'd1) : div_raw_res;
 
+  assign perf_cycles = cycle64[31:0];
+  assign perf_instructions = instret64[31:0];
+
   always_comb begin
     csr_rdata = 32'd0;
     case (csr_addr)
       12'h300: csr_rdata = csr_mstatus;
+      12'h301: csr_rdata = 32'h4000_1100;
       12'h304: csr_rdata = csr_mie;
       12'h305: csr_rdata = csr_mtvec;
       12'h341: csr_rdata = csr_mepc;
       12'h342: csr_rdata = csr_mcause;
       12'h344: csr_rdata = {20'd0, irq_external, 3'd0, irq_timer, 7'd0};
-      12'hc00: csr_rdata = perf_cycles;
-      12'hc02: csr_rdata = perf_instructions;
+      12'hb00,
+      12'hc00: csr_rdata = cycle64[31:0];
+      12'hb02,
+      12'hc02: csr_rdata = instret64[31:0];
+      12'hb80,
+      12'hc80: csr_rdata = cycle64[63:32];
+      12'hb82,
+      12'hc82: csr_rdata = instret64[63:32];
+      12'hf14: csr_rdata = 32'd0;
       default: csr_rdata = 32'd0;
     endcase
   end
@@ -188,10 +204,102 @@ module rv32i_core #(
     endcase
   endfunction
 
+  logic sync_exc_valid;
+  logic [31:0] sync_exc_cause;
+
+  always_comb begin
+    sync_exc_valid = 1'b0;
+    sync_exc_cause = 32'd2;
+    case (opcode)
+      OP_LUI,
+      OP_AUIPC: begin end
+      OP_JAL: begin
+        if (jal_target[1] != 1'b0) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd0;
+        end
+      end
+      OP_JALR: begin
+        if (funct3 != 3'b000) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd2;
+        end else if (jalr_target[1] != 1'b0) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd0;
+        end
+      end
+      OP_BRANCH: begin
+        if (funct3 == 3'b010 || funct3 == 3'b011) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd2;
+        end
+      end
+      OP_LOAD: begin
+        if (funct3 == 3'b011 || funct3 == 3'b110 || funct3 == 3'b111) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd2;
+        end else if (mem_misaligned) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd4;
+        end
+      end
+      OP_STORE: begin
+        if (funct3 > 3'b010) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd2;
+        end else if (mem_misaligned) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd6;
+        end
+      end
+      OP_OPIMM: begin
+        if ((funct3 == 3'b001 && funct7 != 7'b0000000) ||
+            (funct3 == 3'b101 && funct7 != 7'b0000000 && funct7 != 7'b0100000)) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd2;
+        end
+      end
+      OP_OP: begin
+        if (!(funct7 == 7'b0000000 ||
+              funct7 == 7'b0000001 ||
+              (funct7 == 7'b0100000 && (funct3 == 3'b000 || funct3 == 3'b101)))) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd2;
+        end
+      end
+      OP_MISC_MEM: begin
+        if (funct3 != 3'b000 && funct3 != 3'b001) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd2;
+        end
+      end
+      OP_SYSTEM: begin
+        if (funct3 == 3'b000) begin
+          if (imem_rdata == 32'h0000_0073) begin
+            sync_exc_valid = 1'b1;
+            sync_exc_cause = 32'd11;
+          end else if (imem_rdata == 32'h0010_0073) begin
+            sync_exc_valid = 1'b1;
+            sync_exc_cause = 32'd3;
+          end else if (imem_rdata != 32'h1050_0073 && imem_rdata != 32'h3020_0073) begin
+            sync_exc_valid = 1'b1;
+            sync_exc_cause = 32'd2;
+          end
+        end else if (funct3 == 3'b100 || (csr_write_en && csr_addr[11:10] == 2'b11)) begin
+          sync_exc_valid = 1'b1;
+          sync_exc_cause = 32'd2;
+        end
+      end
+      default: begin
+        sync_exc_valid = 1'b1;
+        sync_exc_cause = 32'd2;
+      end
+    endcase
+  end
+
   always_ff @(posedge clk or posedge reset) begin
     if (reset) begin
       pc <= RESET_PC;
-      trap <= 1'b0;
       state <= FETCH;
       mem_addr_q <= 32'd0;
       mem_wdata_q <= 32'd0;
@@ -200,8 +308,8 @@ module rv32i_core #(
       mem_funct3_q <= 3'd0;
       mem_rd_q <= 5'd0;
       mem_is_load_q <= 1'b0;
-      perf_cycles <= 32'd0;
-      perf_instructions <= 32'd0;
+      cycle64 <= 64'd0;
+      instret64 <= 64'd0;
       perf_loads <= 32'd0;
       perf_stores <= 32'd0;
       perf_branches <= 32'd0;
@@ -221,7 +329,7 @@ module rv32i_core #(
       div_rd <= 5'd0;
       for (index = 0; index < 32; index = index + 1) regs[index] <= 32'd0;
     end else begin
-      perf_cycles <= perf_cycles + 32'd1;
+      cycle64 <= cycle64 + 64'd1;
       regs[0] <= 32'd0;
       case (state)
         FETCH: begin
@@ -232,44 +340,39 @@ module rv32i_core #(
             csr_mstatus[3] <= 1'b0;
             pc <= csr_mtvec;
             state <= FETCH;
-          end else if (opcode == OP_LOAD || opcode == OP_STORE) begin
-            if (mem_misaligned ||
-                (opcode == OP_STORE && (funct3 == 3'b100 || funct3 == 3'b101 || funct3[2:0] > 3'b010)) ||
-                (opcode == OP_LOAD && (funct3 == 3'b011 || funct3 == 3'b110 || funct3 == 3'b111))) begin
-              if (mem_misaligned && csr_mtvec != 32'd0) begin
-                csr_mepc <= pc;
-                csr_mcause <= (opcode == OP_STORE) ? 32'd6 : 32'd4;
-                csr_mstatus[7] <= csr_mstatus[3];
-                csr_mstatus[3] <= 1'b0;
-                pc <= csr_mtvec;
-                state <= FETCH;
-              end else begin
-                trap <= 1'b1;
-                state <= TRAP;
-              end
+          end else if (sync_exc_valid) begin
+            if (csr_mtvec != 32'd0) begin
+              csr_mepc <= pc;
+              csr_mcause <= sync_exc_cause;
+              csr_mstatus[7] <= csr_mstatus[3];
+              csr_mstatus[3] <= 1'b0;
+              pc <= csr_mtvec;
+              state <= FETCH;
             end else begin
-              mem_addr_q <= effective_addr;
-              mem_wdata_q <= rs2_value << (8 * effective_addr[1:0]);
-              mem_write_q <= (opcode == OP_STORE);
-              mem_is_load_q <= (opcode == OP_LOAD);
-              mem_funct3_q <= funct3;
-              mem_rd_q <= rd;
-              state <= MEM_REQUEST;
-              case (funct3)
-                3'b000: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0001 << effective_addr[1:0]) : 4'b0000;
-                3'b001: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0011 << effective_addr[1:0]) : 4'b0000;
-                3'b010: mem_wstrb_q <= (opcode == OP_STORE) ? 4'b1111 : 4'b0000;
-                default: mem_wstrb_q <= 4'b0000;
-              endcase
+              state <= TRAP;
             end
+          end else if (opcode == OP_LOAD || opcode == OP_STORE) begin
+            mem_addr_q <= effective_addr;
+            mem_wdata_q <= rs2_value << (8 * effective_addr[1:0]);
+            mem_write_q <= (opcode == OP_STORE);
+            mem_is_load_q <= (opcode == OP_LOAD);
+            mem_funct3_q <= funct3;
+            mem_rd_q <= rd;
+            state <= MEM_REQUEST;
+            case (funct3)
+              3'b000: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0001 << effective_addr[1:0]) : 4'b0000;
+              3'b001: mem_wstrb_q <= (opcode == OP_STORE) ? (4'b0011 << effective_addr[1:0]) : 4'b0000;
+              3'b010: mem_wstrb_q <= (opcode == OP_STORE) ? 4'b1111 : 4'b0000;
+              default: mem_wstrb_q <= 4'b0000;
+            endcase
           end else if (opcode == OP_OP && funct7 == 7'b0000001 && funct3[2] == 1'b1) begin
             if (rs2_value == 32'd0) begin
               if (rd != 5'd0) regs[rd] <= funct3[1] ? rs1_value : 32'hffff_ffff;
-              perf_instructions <= perf_instructions + 32'd1;
+              instret64 <= instret64 + 64'd1;
               pc <= pc + 32'd4;
             end else if (!funct3[0] && rs1_value == 32'h8000_0000 && rs2_value == 32'hffff_ffff) begin
               if (rd != 5'd0) regs[rd] <= funct3[1] ? 32'd0 : 32'h8000_0000;
-              perf_instructions <= perf_instructions + 32'd1;
+              instret64 <= instret64 + 64'd1;
               pc <= pc + 32'd4;
             end else begin
               div_quotient <= div_abs_rs1;
@@ -282,45 +385,13 @@ module rv32i_core #(
               state <= DIV_WAIT;
             end
           end else begin
-            perf_instructions <= perf_instructions + 32'd1;
+            instret64 <= instret64 + 64'd1;
             if (opcode == OP_BRANCH) perf_branches <= perf_branches + 32'd1;
             case (opcode)
               OP_LUI: begin if (rd != 5'd0) regs[rd] <= imm_u; pc <= pc + 32'd4; end
               OP_AUIPC: begin if (rd != 5'd0) regs[rd] <= pc + imm_u; pc <= pc + 32'd4; end
-              OP_JAL: begin
-                if (jal_target[1] != 1'b0) begin
-                  if (csr_mtvec != 32'd0) begin
-                    csr_mepc <= pc;
-                    csr_mcause <= 32'd0;
-                    csr_mstatus[7] <= csr_mstatus[3];
-                    csr_mstatus[3] <= 1'b0;
-                    pc <= csr_mtvec;
-                  end else begin
-                    trap <= 1'b1;
-                    state <= TRAP;
-                  end
-                end else begin
-                  if (rd != 5'd0) regs[rd] <= pc + 32'd4;
-                  pc <= jal_target;
-                end
-              end
-              OP_JALR: begin
-                if (jalr_target[1] != 1'b0) begin
-                  if (csr_mtvec != 32'd0) begin
-                    csr_mepc <= pc;
-                    csr_mcause <= 32'd0;
-                    csr_mstatus[7] <= csr_mstatus[3];
-                    csr_mstatus[3] <= 1'b0;
-                    pc <= csr_mtvec;
-                  end else begin
-                    trap <= 1'b1;
-                    state <= TRAP;
-                  end
-                end else begin
-                  if (rd != 5'd0) regs[rd] <= pc + 32'd4;
-                  pc <= jalr_target;
-                end
-              end
+              OP_JAL: begin if (rd != 5'd0) regs[rd] <= pc + 32'd4; pc <= jal_target; end
+              OP_JALR: begin if (rd != 5'd0) regs[rd] <= pc + 32'd4; pc <= jalr_target; end
               OP_BRANCH: begin
                 case (funct3)
                   3'b000: pc <= (rs1_value == rs2_value) ? pc + imm_b : pc + 32'd4;
@@ -328,8 +399,7 @@ module rv32i_core #(
                   3'b100: pc <= ($signed(rs1_value) < $signed(rs2_value)) ? pc + imm_b : pc + 32'd4;
                   3'b101: pc <= ($signed(rs1_value) >= $signed(rs2_value)) ? pc + imm_b : pc + 32'd4;
                   3'b110: pc <= (rs1_value < rs2_value) ? pc + imm_b : pc + 32'd4;
-                  3'b111: pc <= (rs1_value >= rs2_value) ? pc + imm_b : pc + 32'd4;
-                  default: begin pc <= pc + 32'd4; trap <= 1'b1; state <= TRAP; end
+                  default: pc <= (rs1_value >= rs2_value) ? pc + imm_b : pc + 32'd4;
                 endcase
               end
               OP_OPIMM: begin
@@ -340,28 +410,15 @@ module rv32i_core #(
                   3'b100: begin if (rd != 5'd0) regs[rd] <= rs1_value ^ imm_i; pc <= pc + 32'd4; end
                   3'b110: begin if (rd != 5'd0) regs[rd] <= rs1_value | imm_i; pc <= pc + 32'd4; end
                   3'b111: begin if (rd != 5'd0) regs[rd] <= rs1_value & imm_i; pc <= pc + 32'd4; end
-                  3'b001: begin
-                    if (funct7 == 7'b0000000) begin
-                      if (rd != 5'd0) regs[rd] <= rs1_value << imem_rdata[24:20];
-                      pc <= pc + 32'd4;
-                    end else begin
-                      trap <= 1'b1;
-                      state <= TRAP;
-                    end
-                  end
-                  3'b101: begin
-                    if (funct7 == 7'b0000000) begin
-                      if (rd != 5'd0) regs[rd] <= rs1_value >> imem_rdata[24:20];
-                      pc <= pc + 32'd4;
-                    end else if (funct7 == 7'b0100000) begin
+                  3'b001: begin if (rd != 5'd0) regs[rd] <= rs1_value << imem_rdata[24:20]; pc <= pc + 32'd4; end
+                  default: begin
+                    if (funct7 == 7'b0100000) begin
                       if (rd != 5'd0) regs[rd] <= $signed(rs1_value) >>> imem_rdata[24:20];
-                      pc <= pc + 32'd4;
                     end else begin
-                      trap <= 1'b1;
-                      state <= TRAP;
+                      if (rd != 5'd0) regs[rd] <= rs1_value >> imem_rdata[24:20];
                     end
+                    pc <= pc + 32'd4;
                   end
-                  default: begin trap <= 1'b1; state <= TRAP; end
                 endcase
               end
               OP_OP: begin
@@ -377,81 +434,48 @@ module rv32i_core #(
                   10'b0000000_110: begin if (rd != 5'd0) regs[rd] <= rs1_value | rs2_value; pc <= pc + 32'd4; end
                   10'b0000000_111: begin if (rd != 5'd0) regs[rd] <= rs1_value & rs2_value; pc <= pc + 32'd4; end
                   10'b0000001_000: begin if (rd != 5'd0) regs[rd] <= mul_prod[31:0]; pc <= pc + 32'd4; end
-                  10'b0000001_001: begin if (rd != 5'd0) regs[rd] <= mul_prod[63:32]; pc <= pc + 32'd4; end
-                  10'b0000001_010: begin if (rd != 5'd0) regs[rd] <= mul_prod[63:32]; pc <= pc + 32'd4; end
+                  10'b0000001_001,
+                  10'b0000001_010,
                   10'b0000001_011: begin if (rd != 5'd0) regs[rd] <= mul_prod[63:32]; pc <= pc + 32'd4; end
-                  default: begin trap <= 1'b1; state <= TRAP; end
+                  default: begin pc <= pc + 32'd4; end
                 endcase
               end
               OP_MISC_MEM: begin
-                if (funct3 == 3'b000 || funct3 == 3'b001) begin
-                  pc <= pc + 32'd4;
-                end else begin
-                  trap <= 1'b1;
-                  state <= TRAP;
-                end
+                pc <= pc + 32'd4;
               end
               OP_SYSTEM: begin
                 if (funct3 == 3'b000) begin
                   if (imem_rdata == 32'h1050_0073) begin
                     pc <= pc + 32'd4;
                     state <= WFI_WAIT;
-                  end else if (imem_rdata == 32'h3020_0073) begin
+                  end else begin
                     pc <= csr_mepc;
                     csr_mstatus[3] <= csr_mstatus[7];
                     csr_mstatus[7] <= 1'b1;
-                  end else if (imem_rdata == 32'h0000_0073) begin
-                    if (csr_mtvec != 32'd0) begin
-                      csr_mepc <= pc;
-                      csr_mcause <= 32'd11;
-                      csr_mstatus[7] <= csr_mstatus[3];
-                      csr_mstatus[3] <= 1'b0;
-                      pc <= csr_mtvec;
-                    end else begin
-                      trap <= 1'b1;
-                      state <= TRAP;
-                    end
-                  end else if (imem_rdata == 32'h0010_0073) begin
-                    if (csr_mtvec != 32'd0) begin
-                      csr_mepc <= pc;
-                      csr_mcause <= 32'd3;
-                      csr_mstatus[7] <= csr_mstatus[3];
-                      csr_mstatus[3] <= 1'b0;
-                      pc <= csr_mtvec;
-                    end else begin
-                      trap <= 1'b1;
-                      state <= TRAP;
-                    end
-                  end else begin
-                    trap <= 1'b1;
-                    state <= TRAP;
                   end
-                end else if (funct3[1:0] != 2'b00) begin
+                end else begin
                   if (rd != 5'd0) regs[rd] <= csr_rdata;
                   if (csr_write_en) begin
                     case (csr_addr)
                       12'h300: csr_mstatus <= csr_wdata;
                       12'h304: csr_mie <= csr_wdata;
-                      12'h305: csr_mtvec <= csr_wdata;
-                      12'h341: csr_mepc <= csr_wdata;
+                      12'h305: csr_mtvec <= {csr_wdata[31:2], 2'b00};
+                      12'h341: csr_mepc <= {csr_wdata[31:2], 2'b00};
                       12'h342: csr_mcause <= csr_wdata;
                       default: begin end
                     endcase
                   end
                   pc <= pc + 32'd4;
-                end else begin
-                  trap <= 1'b1;
-                  state <= TRAP;
                 end
               end
-              default: begin trap <= 1'b1; state <= TRAP; end
+              default: begin pc <= pc + 32'd4; end
             endcase
           end
         end
         DIV_WAIT: begin
           if (div_cnt == 6'd0) begin
             if (div_rd != 5'd0) regs[div_rd] <= div_final_res;
-            perf_instructions <= perf_instructions + 32'd1;
+            instret64 <= instret64 + 64'd1;
             pc <= pc + 32'd4;
             state <= FETCH;
           end else begin
@@ -473,11 +497,10 @@ module rv32i_core #(
                   pc <= csr_mtvec;
                   state <= FETCH;
                 end else begin
-                  trap <= 1'b1;
                   state <= TRAP;
                 end
               end else begin
-                perf_instructions <= perf_instructions + 32'd1;
+                instret64 <= instret64 + 64'd1;
                 if (mem_is_load_q) perf_loads <= perf_loads + 32'd1;
                 else perf_stores <= perf_stores + 32'd1;
                 if (mem_is_load_q && mem_rd_q != 5'd0) regs[mem_rd_q] <= load_extend(rsp_rdata, mem_funct3_q, mem_addr_q[1:0]);
@@ -499,11 +522,10 @@ module rv32i_core #(
                 pc <= csr_mtvec;
                 state <= FETCH;
               end else begin
-                trap <= 1'b1;
                 state <= TRAP;
               end
             end else begin
-              perf_instructions <= perf_instructions + 32'd1;
+              instret64 <= instret64 + 64'd1;
               if (mem_is_load_q) perf_loads <= perf_loads + 32'd1;
               else perf_stores <= perf_stores + 32'd1;
               if (mem_is_load_q && mem_rd_q != 5'd0) regs[mem_rd_q] <= load_extend(rsp_rdata, mem_funct3_q, mem_addr_q[1:0]);

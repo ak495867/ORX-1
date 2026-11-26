@@ -44,6 +44,8 @@ module wb_xbar_formal (
 
   logic past_valid;
   logic [2:0] m0_wait_cnt;
+  logic [2:0] m1_wait_cnt;
+  logic [2:0] m2_wait_cnt;
 
   assign s_ack_i = s_ack_raw & s_cyc_o & s_stb_o;
   assign s_err_i = s_err_raw & s_cyc_o & s_stb_o & ~s_ack_i;
@@ -69,6 +71,8 @@ module wb_xbar_formal (
   initial begin
     past_valid = 1'b0;
     m0_wait_cnt = 3'd0;
+    m1_wait_cnt = 3'd0;
+    m2_wait_cnt = 3'd0;
   end
 
   always @(posedge clk) begin
@@ -76,15 +80,29 @@ module wb_xbar_formal (
     if (!past_valid) begin
       assume (reset);
       assume (m0_wait_cnt == 3'd0);
+      assume (m1_wait_cnt == 3'd0);
+      assume (m2_wait_cnt == 3'd0);
     end
 
     if (reset) begin
       m0_wait_cnt <= 3'd0;
+      m1_wait_cnt <= 3'd0;
+      m2_wait_cnt <= 3'd0;
     end else begin
       if (m0_cyc_i && m0_stb_i && !(m0_ack_o || m0_err_o)) begin
         if (m0_wait_cnt < 3'd7) m0_wait_cnt <= m0_wait_cnt + 3'd1;
       end else begin
         m0_wait_cnt <= 3'd0;
+      end
+      if (m1_cyc_i && m1_stb_i && !(m1_ack_o || m1_err_o)) begin
+        if (m1_wait_cnt < 3'd7) m1_wait_cnt <= m1_wait_cnt + 3'd1;
+      end else begin
+        m1_wait_cnt <= 3'd0;
+      end
+      if (m2_cyc_i && m2_stb_i && !(m2_ack_o || m2_err_o)) begin
+        if (m2_wait_cnt < 3'd7) m2_wait_cnt <= m2_wait_cnt + 3'd1;
+      end else begin
+        m2_wait_cnt <= 3'd0;
       end
     end
 
@@ -109,10 +127,13 @@ module wb_xbar_formal (
       assert ($onehot0({m2_err_o, m1_err_o, m0_err_o}));
       assert ($onehot0(s_cyc_o));
       assert ($onehot0(s_stb_o));
+      assert (s_cyc_o == s_stb_o);
       assert (!(m0_ack_o || m0_err_o) || (m0_cyc_i && m0_stb_i));
       assert (!(m1_ack_o || m1_err_o) || (m1_cyc_i && m1_stb_i));
       assert (!(m2_ack_o || m2_err_o) || (m2_cyc_i && m2_stb_i));
       assert (m0_wait_cnt <= 3'd6);
+      assert (m1_wait_cnt <= 3'd6);
+      assert (m2_wait_cnt <= 3'd6);
     end
   end
 endmodule

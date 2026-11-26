@@ -15,7 +15,11 @@ iverilog -g2012 -s tb_interrupts -o build/tb_interrupts $RTL tb/tb_interrupts.sv
 vvp build/tb_interrupts
 iverilog -g2012 -s tb_peripherals -o build/tb_peripherals $RTL tb/tb_peripherals.sv
 vvp build/tb_peripherals
+iverilog -g2012 -s tb_boot_flash -o build/tb_boot_flash $RTL tb/tb_boot_flash.sv
+vvp build/tb_boot_flash
 iverilog -g2012 -s tb_cpu_benchmark -o build/tb_cpu_benchmark $RTL tb/tb_cpu_benchmark.sv
 vvp build/tb_cpu_benchmark
+iverilog -g2012 -s tb_model_bench -o build/tb_model_bench $RTL tb/tb_model_bench.sv
+vvp build/tb_model_bench
 iverilog -g2012 -s tb_riscv_compliance -o build/tb_riscv_compliance $RTL tb/tb_riscv_compliance.sv
 vvp build/tb_riscv_compliance

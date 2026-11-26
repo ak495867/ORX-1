@@ -17,7 +17,9 @@ module gpio_ctrl (
   logic [15:0] irq_en;
   logic [15:0] irq_pending;
   logic [15:0] rising_edges;
+  logic _unused_wdata;
 
+  assign _unused_wdata = &{1'b0, csr_wdata[31:16]};
   assign rising_edges = in_sync_1 & ~in_prev;
   assign gpio_irq = |(irq_pending & irq_en);
 

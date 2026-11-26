@@ -31,6 +31,8 @@ jobs:
         run: make sim
       - name: Run CPU benchmark
         run: make bench
+      - name: Run model and speed benchmarks
+        run: make model-bench
       - name: Run RISC-V compliance test
         run: make compliance
       - name: Run lint

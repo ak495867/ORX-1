@@ -25,7 +25,9 @@ module energy_monitor (
   logic [31:0] accelerator_count;
   logic [31:0] memory_count;
   logic [31:0] weighted_activity;
+  logic _unused_wdata;
 
+  assign _unused_wdata = &{1'b0, csr_wdata[31:1]};
   assign weighted_activity = active_cycles + (sensor_count << 1) + (accelerator_count << 3) + (memory_count << 2);
 
   always_comb begin

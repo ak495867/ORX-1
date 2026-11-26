@@ -11,7 +11,9 @@ module irq_ctrl (
 );
   logic [5:0] irq_enable;
   logic [5:0] irq_status;
+  logic _unused_wdata;
 
+  assign _unused_wdata = &{1'b0, csr_wdata[31:6]};
   assign irq_status = irq_sources & irq_enable;
   assign irq_out = |irq_status;
 

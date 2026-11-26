@@ -34,12 +34,10 @@ module dma_ctrl (
   logic start_ch0;
   logic start_ch1;
   logic [15:0] next_cnt;
-  logic [31:0] cur_src_addr;
   logic [31:0] cur_dst_addr;
   logic [31:0] next_src_addr;
 
   assign dma_req_wstrb = 4'b1111;
-  assign cur_src_addr = ch_src_fixed[active_ch] ? src_addr[active_ch] : (src_addr[active_ch] + ({16'd0, cur_count[active_ch]} << 2));
   assign cur_dst_addr = ch_dst_fixed[active_ch] ? dst_addr[active_ch] : (dst_addr[active_ch] + ({16'd0, cur_count[active_ch]} << 2));
   assign next_cnt = cur_count[active_ch] + 16'd1;
   assign next_src_addr = ch_src_fixed[active_ch] ? src_addr[active_ch] : (src_addr[active_ch] + ({16'd0, next_cnt} << 2));

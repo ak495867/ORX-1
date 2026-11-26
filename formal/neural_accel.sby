@@ -1,0 +1,15 @@
+[options]
+mode prove
+depth 4
+multiclock off
+
+[engines]
+smtbmc z3
+
+[script]
+read_verilog -formal -sv neural_accel.sv neural_accel_formal.sv
+prep -top neural_accel_formal
+
+[files]
+rtl/neural_accel.sv
+formal/neural_accel_formal.sv

@@ -8,12 +8,14 @@ module sys_ctrl (
   output logic [31:0] csr_rdata,
   input logic host_grant,
   input logic boot_release,
+  input logic wb_host_err,
   output logic cpu_reset_req,
   output logic wdt_reset_out
 );
   logic cpu_hold_reset;
   logic boot_gate_en;
   logic wdt_reset_flag;
+  logic wb_err_flag;
   logic wdt_enable;
   logic [31:0] wdt_load;
   logic [31:0] wdt_count;
@@ -23,7 +25,7 @@ module sys_ctrl (
   always_comb begin
     csr_rdata = 32'd0;
     case (csr_addr)
-      8'h00: csr_rdata = {29'd0, wdt_reset_flag, boot_gate_en, cpu_hold_reset};
+      8'h00: csr_rdata = {28'd0, wb_err_flag, wdt_reset_flag, boot_gate_en, cpu_hold_reset};
       8'h04: csr_rdata = wdt_load;
       8'h08: csr_rdata = {31'd0, wdt_enable};
       8'h0c: csr_rdata = wdt_count;
@@ -36,12 +38,14 @@ module sys_ctrl (
       cpu_hold_reset <= 1'b0;
       boot_gate_en <= 1'b0;
       wdt_reset_flag <= 1'b0;
+      wb_err_flag <= 1'b0;
       wdt_enable <= 1'b0;
       wdt_load <= 32'h0010_0000;
       wdt_count <= 32'h0010_0000;
       wdt_reset_out <= 1'b0;
     end else begin
       wdt_reset_out <= 1'b0;
+      if (wb_host_err) wb_err_flag <= 1'b1;
       if (wdt_enable) begin
         if (wdt_count == 32'd0) begin
           wdt_reset_out <= 1'b1;
@@ -61,6 +65,7 @@ module sys_ctrl (
               boot_gate_en <= csr_wdata[1];
             end
             if (csr_wdata[2]) wdt_reset_flag <= 1'b0;
+            if (csr_wdata[3]) wb_err_flag <= 1'b0;
           end
           8'h04: begin
             wdt_load <= csr_wdata;

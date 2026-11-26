@@ -8,6 +8,7 @@ TB_SOC := tb/tb_soc.sv
 TB_FW := tb/tb_firmware.sv
 TB_IRQ := tb/tb_interrupts.sv
 TB_PERIPH := tb/tb_peripherals.sv
+TB_FLASH := tb/tb_boot_flash.sv
 TB_BENCH := tb/tb_cpu_benchmark.sv
 TB_MODEL_BENCH := tb/tb_model_bench.sv
 TB_COMP := tb/tb_riscv_compliance.sv
@@ -26,6 +27,7 @@ test-sw: $(BUILD)
 	gcc -O2 -Wall -Wextra -Werror -DORX1_HOST_TEST -Isw/include -Isw/tinyml sw/tinyml/tinyml.c sw/tests/bench_models.c -o $(BUILD)/bench_models
 	./$(BUILD)/bench_models | tee $(BUILD)/c_model_benchmark.log
 	grep -q BENCH_MODELS_PASS $(BUILD)/c_model_benchmark.log
+	gcc -O2 -Wall -Wextra -Werror -DORX1_HOST_TEST -Isw/include -c sw/boot/bootloader.c -o $(BUILD)/bootloader.o
 
 sim: $(BUILD)
 	iverilog -g2012 -Wall -s tb_orx1 -o $(BUILD)/tb_orx1 $(RTL) $(TB_LEAF) 2>&1 | tee $(BUILD)/sim_compile_leaf.log
@@ -46,6 +48,9 @@ sim: $(BUILD)
 	iverilog -g2012 -Wall -s tb_peripherals -o $(BUILD)/tb_peripherals $(RTL) $(TB_PERIPH) 2>&1 | tee $(BUILD)/sim_compile_periph.log
 	vvp $(BUILD)/tb_peripherals | tee $(BUILD)/sim_periph.log
 	grep -q PERIPHERALS_TEST_PASS $(BUILD)/sim_periph.log
+	iverilog -g2012 -Wall -s tb_boot_flash -o $(BUILD)/tb_boot_flash $(RTL) $(TB_FLASH) 2>&1 | tee $(BUILD)/sim_compile_flash.log
+	vvp $(BUILD)/tb_boot_flash | tee $(BUILD)/sim_boot_flash.log
+	grep -q BOOT_FLASH_TEST_PASS $(BUILD)/sim_boot_flash.log
 
 bench: $(BUILD)
 	iverilog -g2012 -Wall -s tb_cpu_benchmark -o $(BUILD)/tb_cpu_benchmark $(RTL) $(TB_BENCH) 2>&1 | tee $(BUILD)/sim_compile_benchmark.log
@@ -59,6 +64,7 @@ model-bench: $(BUILD)
 	gcc -O2 -Wall -Wextra -Werror -DORX1_HOST_TEST -Isw/include -Isw/tinyml sw/tinyml/tinyml.c sw/tests/bench_models.c -o $(BUILD)/bench_models
 	./$(BUILD)/bench_models | tee $(BUILD)/c_model_benchmark.log
 	grep -q BENCH_MODELS_PASS $(BUILD)/c_model_benchmark.log
+	gcc -O2 -Wall -Wextra -Werror -DORX1_HOST_TEST -Isw/include -c sw/boot/bootloader.c -o $(BUILD)/bootloader.o
 
 compliance: $(BUILD)
 	iverilog -g2012 -Wall -s tb_riscv_compliance -o $(BUILD)/tb_riscv_compliance $(RTL) $(TB_COMP) 2>&1 | tee $(BUILD)/sim_compile_compliance.log
@@ -71,16 +77,18 @@ sw: $(BUILD)
 	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=4 $(BUILD)/tinyml_anomaly_detector.elf $(BUILD)/tinyml_anomaly_detector.hex
 
 lint: $(BUILD)
-	verilator --lint-only -Wall --Wno-fatal --top-module orx1_soc $(RTL) 2>&1 | tee $(BUILD)/verilator.log
-	sed -n '/%Warning/p' $(BUILD)/verilator.log > $(BUILD)/verilator-warnings.log || true
+	verilator --lint-only -Wall --top-module orx1_soc $(RTL) 2>&1 | tee $(BUILD)/verilator.log
+	verilator --lint-only -Wall --top-module caravel_user_project_wrapper $(RTL) rtl/caravel_user_project_wrapper.sv 2>&1 | tee $(BUILD)/verilator_caravel.log
 
 synth: $(BUILD)
-	yosys -p "read_verilog -sv $(RTL); hierarchy -top orx1_soc; proc; opt; check; stat" 2>&1 | tee $(BUILD)/yosys.log
+	yosys -p "read_verilog -sv $(RTL) rtl/caravel_user_project_wrapper.sv; hierarchy -top caravel_user_project_wrapper; proc; opt; check; stat" 2>&1 | tee $(BUILD)/yosys.log
 
 formal: $(BUILD)
 	command -v sby >/dev/null || (printf '%s\n' 'sby is required; install SymbiYosys and a solver before running make formal.'; exit 1)
-	sby -f formal/cpu_bus.sby 2>&1 | tee $(BUILD)/formal.log
 	sby -f formal/wb_xbar.sby 2>&1 | tee $(BUILD)/formal_xbar.log
+	sby -f formal/neural_accel.sby 2>&1 | tee $(BUILD)/formal_npu.log
+	sby -f formal/secure_boot.sby 2>&1 | tee $(BUILD)/formal_boot.log
+	sby -f formal/cpu_bus.sby 2>&1 | tee $(BUILD)/formal.log
 
 clean:
 	rm -rf $(BUILD) yosys.log

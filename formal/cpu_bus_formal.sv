@@ -64,8 +64,13 @@ module cpu_bus_formal (
       end
     end
 
+    if (past_valid && !reset && $past(reset)) begin
+      assert (!trap && !req_valid && !core_sleep);
+    end
     if (past_valid && !reset && $past(!reset)) begin
       assert (!rsp_valid || (req_valid && req_ready) || wait_pending);
+      assert (!(req_valid && $past(req_valid && req_ready && !rsp_valid)));
+      assert (!(trap && core_sleep));
       if ($past(req_valid && !req_ready)) begin
         assert (req_valid);
         assert ($stable({req_write, req_addr, req_wdata, req_wstrb}));
@@ -77,6 +82,8 @@ module cpu_bus_formal (
       assert (perf_instructions == $past(perf_instructions) || perf_instructions == $past(perf_instructions) + 32'd1);
       assert (perf_bus_requests == $past(perf_bus_requests) || perf_bus_requests == $past(perf_bus_requests) + 32'd1);
       assert (perf_wait_cycles == $past(perf_wait_cycles) || perf_wait_cycles == $past(perf_wait_cycles) + 32'd1);
+      assert (perf_loads == $past(perf_loads) || perf_loads == $past(perf_loads) + 32'd1);
+      assert (perf_stores == $past(perf_stores) || perf_stores == $past(perf_stores) + 32'd1);
     end
   end
 endmodule
